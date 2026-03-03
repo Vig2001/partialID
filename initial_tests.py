@@ -114,7 +114,7 @@ def catc_func(X, alpha, gamma_uy, gamma_ut):
 
 def true_cate_func(X, alpha, gamma_uy, gamma_ut):
     """
-    Simply returns 1.5X (in this scenario) as the CATE.
+    
     """
     cate_1 = catt_func(X, alpha, gamma_uy, gamma_ut) * marginal_propensity(X, 1, alpha, gamma_ut)
     cate_0 = catc_func(X, alpha, gamma_uy, gamma_ut) * marginal_propensity(X, 0, alpha, gamma_ut)
@@ -157,7 +157,7 @@ print("Calculating integrals, this might take a few seconds...")
 
 for x in x_vals:
     # 1. The True Unconfounded CATE
-    true_val = 1.5 * x 
+    true_val = true_cate_func(x, alpha_val, gamma_uy_val, gamma_ut_val) 
     true_cate_vals.append(true_val)
     
     # 2. The True Confounded OS CATE
@@ -169,7 +169,7 @@ for x in x_vals:
 
 plt.figure(figsize=(10, 6))
 
-plt.plot(x_vals, true_cate_vals, label='True CATE ($1.5X$)', color='blue', linewidth=2, linestyle='--')
+plt.plot(x_vals, true_cate_vals, label='True CATE', color='blue', linewidth=2, linestyle='--')
 plt.plot(x_vals, confounded_cate_vals, label='Confounded OS CATE', color='red', linewidth=2)
 plt.plot(x_vals, correction_vals, label='Correction Function $\Delta(X)$', color='purple', linewidth=2)
 
