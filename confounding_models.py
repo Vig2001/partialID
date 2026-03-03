@@ -1,7 +1,6 @@
 import numpy as np
 import scipy.integrate as integrate
 import scipy.stats as stats
-import matplotlib.pyplot as plt
 
 # In this script I use OOP to make my simulations more systematic and easy to follow
 
@@ -112,4 +111,82 @@ class ComplexNonlinearModel(BaseConfoundingModel):
         
     def propensity_score(self, X, U):
         logit = self.alpha * X + self.gamma_ut * (X * U) # Interaction in treatment assignment
+        return 1 / (1 + np.exp(-logit))
+    
+class GammaConfoundingModel(BaseConfoundingModel):
+    def __init__(self, alpha=1.0, gamma_uy=2.0, gamma_ut=4.0, shape=2.0, scale=1.0):
+        # Initialize the base class parameters
+        super().__init__(alpha, gamma_uy, gamma_ut)
+        
+        # Gamma-specific parameters
+        self.shape = shape
+        self.scale = scale
+
+    def pdf_u_given_x(self, u, X):
+        """
+        Using a Gamma distribution which is strictly positive and right-skewed.
+        """
+        return stats.gamma.pdf(u, a=self.shape, scale=self.scale)
+
+    def integration_bounds(self, X):
+        """
+        Gamma distributions cannot be negative. 
+        They are bounded at 0 and extend to positive infinity.
+        """
+        return 0.0, np.inf
+        
+    def potential_outcomes(self, X, U):
+        # We keep the structural equations linear here so that any 
+        # changes we see in the bias are PURELY due to the skewed distribution.
+        Y0 = 1.0 + 0.5 * X + U
+        Y1 = 1.0 + 2.0 * X + self.gamma_uy * U
+        return Y0, Y1, Y1 - Y0
+        
+    def propensity_score(self, X, U):
+        logit = self.alpha * X + self.gamma_ut * U
+        return 1 / (1 + np.exp(-logit))
+    
+class LocalisedGammaModel(BaseConfoundingModel):
+    def __init__(self, alpha=1.0, gamma_uy=2.0, gamma_ut=4.0):
+        super().__init__(alpha, gamma_uy, gamma_ut)
+        self.shape = 2.0  # When 1.0 we have an exponential distribution
+
+    def dynamic_scale(self, X):
+        """
+        Creates a massive spike in the scale of U exactly at X = 1.5.
+        Everywhere else, the scale is a tiny 0.1 (low concentration).
+        """
+        baseline_scale = 0.1
+        spike_height = 5.0
+        sharpness = 20.0  # Higher = narrower spike
+        spike_location = 1.5
+        
+        # The exponential bump function
+        return baseline_scale + spike_height * np.exp(-sharpness * (X - spike_location)**2)
+
+    def pdf_u_given_x(self, u, X):
+        """
+        The PDF now calls dynamic_scale(X) so the distribution physically 
+        stretches and morphs as X moves along the x-axis.
+        """
+        current_scale = self.dynamic_scale(X)
+        return stats.gamma.pdf(u, a=self.shape, scale=current_scale)
+
+    def integration_bounds(self, X):
+        # Clipped the upper bound for computational stability
+
+        current_scale = self.dynamic_scale(X)
+        current_mean = self.shape * current_scale
+        current_std = np.sqrt(self.shape) * current_scale
+        
+        # Search from 0 up to 15 standard deviations away
+        return 0.0, current_mean + 15 * current_std
+        
+    def potential_outcomes(self, X, U):
+        Y0 = 1.0 + 0.5 * X + U
+        Y1 = 1.0 + 2.0 * X + self.gamma_uy * U
+        return Y0, Y1, Y1 - Y0
+        
+    def propensity_score(self, X, U):
+        logit = self.alpha * X + self.gamma_ut * U
         return 1 / (1 + np.exp(-logit))
