@@ -20,7 +20,7 @@ for i, gamma_uy in enumerate(gamma_uy_list):
     for j, gamma_ut in enumerate(gamma_ut_list):
         
         # Model Type - can choose Non-linear etc.
-        model = LinearModel(alpha=1.0, gamma_uy=gamma_uy, gamma_ut=gamma_ut)
+        model = NonlinearFeaturesModel(alpha=1.0, gamma_uy=gamma_uy, gamma_ut=gamma_ut)
         
         true_cate_vals = []
         confounded_cate_vals = []
