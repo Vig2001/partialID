@@ -137,7 +137,7 @@ dvds_marginal_bounds <- function(Y, A, X, pi_hat, Lambda) {
 }
 
 # Compute bounds over a sequence of Lambda values
-Lambda_seq  <- c(1.0, 1.5, 2.0, 2.5, 3.0)
+Lambda_seq  <- c(1.0, 3.0, 5.0)
 true_EY1    <- mean(Y1_pot)
 
 marginal_results <- do.call(rbind, lapply(Lambda_seq, function(L) {
@@ -221,45 +221,42 @@ cond_df$Lambda_label <- factor(paste0("Λ = ", cond_df$Lambda))
 ref <- cond_df[cond_df$Lambda == 1, ]
 
 # ------------------------------------------------------------
-# 5.  Plot 1 — Conditional identified sets for each Lambda
+# 5.  Plot 1 — Conditional bounds as lines for each Lambda
 # ------------------------------------------------------------
 
-p1 <- ggplot(cond_df, aes(x = X)) +
-  geom_ribbon(aes(ymin = Lower, ymax = Upper, fill = Lambda_label),
-              alpha = 0.28) +
-  geom_line(aes(y = (Lower + Upper) / 2, color = Lambda_label),
-            linewidth = 0.65, linetype = "dotted") +
+# Sort data descending by Lambda so the widest bounds are drawn first
+cond_df_sorted <- cond_df %>% arrange(desc(Lambda))
+
+p1 <- ggplot(cond_df_sorted, aes(x = X)) +
+  # Upper bound lines
+  geom_line(aes(y = Upper, color = Lambda_label),
+            linewidth = 0.8, linetype = "dashed") +
+  # Lower bound lines
+  geom_line(aes(y = Lower, color = Lambda_label),
+            linewidth = 0.8, linetype = "dashed") +
+  # True conditional mean (Oracle) - Solid Black
   geom_line(data = ref,
             aes(x = X, y = True),
             color = "black", linewidth = 1.1,
-            linetype = "dashed", inherit.aes = FALSE) +
+            inherit.aes = FALSE) +
+  # Naive estimate - Solid Blue
   geom_line(data = ref,
             aes(x = X, y = Naive),
-            color = "steelblue", linewidth = 0.9,
+            color = "#009E73", linewidth = 1.1,
             inherit.aes = FALSE) +
-  facet_wrap(~Lambda_label, ncol = 3) +
-  scale_fill_manual(
-    values = c("#FEE08B","#FDAE61","#F46D43","#D73027","#A50026"),
-    guide  = "none") +
   scale_color_manual(
-    values = c("#FEE08B","#FDAE61","#F46D43","#D73027","#A50026"),
-    guide  = "none") +
+    name   = "Sensitivity\nParameter Λ",
+    values = c("#56B4E9", "#E69F00", "#CC79A7")) +
   labs(
-    title    = "DVDS Partial Identification of E[Y(1) | X] under Hidden Confounding",
-    subtitle = paste0("Shaded = identified set under MSM(Λ)  ·  ",
-                      "Dashed black = true E[Y(1)|X] (oracle)  ·  ",
-                      "Blue = naive mean of Y among treated"),
+    title    = "Partial Identification of E[Y(1) | X] under Hidden Confounding",
     x        = "Observed covariate  X",
-    y        = "E[Y(1) | X]",
-    caption  = "DVDS estimator — Dorn, Guo & Kallus (2023)"
+    y        = "E[Y(1) | X]"
   ) +
   theme_minimal(base_size = 13) +
   theme(
-    strip.text    = element_text(face = "bold", size = 12),
     plot.title    = element_text(face = "bold"),
     plot.subtitle = element_text(color = "grey40", size = 10)
   )
-
 # ------------------------------------------------------------
 # 6.  Plot 2 — Marginal bound width as a function of Lambda
 # ------------------------------------------------------------
@@ -292,7 +289,7 @@ p2 <- ggplot(marginal_results, aes(x = Lambda)) +
 
 # Print plots
 print(p1)
-print(p2)
+#print(p2)
 
 cat("============================================================\n")
 cat("  INTERPRETATION GUIDE\n")
