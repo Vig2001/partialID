@@ -63,7 +63,7 @@ cat(sprintf("  True ATE           = %.3f\n\n", mean(Y1_pot - Y0_pot)))
 #     Estimate nominal propensity score ignoring U
 # ------------------------------------------------------------
 
-ps_model <- glm(A ~ X, family = binomial)       # misspecified: omits U
+ps_model <- glm(A ~ X, family = binomial)       # omits U
 pi_hat   <- fitted(ps_model)
 pi_hat   <- pmax(pi_hat, 0.02)                  # trim for numerical stability
 
@@ -248,20 +248,20 @@ p1 <- ggplot(cond_df_sorted, aes(x = X)) +
     name   = "Sensitivity\nParameter Λ",
     values = c("#56B4E9", "#E69F00", "#CC79A7")) +
   labs(
-    title    = "Partial Identification of E[Y(1) | X] \n under Hidden Confounding",
+    title    = "Partial Identification of E[Y(1) | X] under Hidden Confounding",
     x        = "Observed covariate  X",
     y        = "E[Y(1) | X]"
   ) +
-  theme_minimal(base_size = 36) +
+  theme_minimal(base_size = 22) +
   theme(
     # Use your suggested size of 40 for the title
-    plot.title    = element_text(size = 40, face = "bold", margin = margin(b = 15)),
+    plot.title    = element_text(size = 30, face = "bold", margin = margin(b = 15)),
     
     # Scale axis and legend titles slightly larger than the base text
-    axis.title.x  = element_text(size = 30, margin = margin(t = 15)),
-    axis.title.y  = element_text(size = 30, margin = margin(r = 15)),
-    legend.title  = element_text(size = 30, face = "bold"),
-    legend.text   = element_text(size = 26),
+    axis.title.x  = element_text(size = 26, margin = margin(t = 15)),
+    axis.title.y  = element_text(size = 26, margin = margin(r = 15)),
+    legend.title  = element_text(size = 26, face = "bold"),
+    legend.text   = element_text(size = 24),
     
     # Ensure the legend lines are long enough to clearly see the dashes
     legend.key.width  = unit(2.5, "cm")
@@ -285,15 +285,23 @@ p2 <- ggplot(marginal_results, aes(x = Lambda)) +
   annotate("text", x = 1.05, y = naive_ipw - 0.1,
            label = "Naive IPW", hjust = 0, size = 3.5, color = "steelblue") +
   scale_x_continuous(breaks = Lambda_seq) +
-  labs(
-    title    = "Marginal Identified Set for E[Y(1)] vs Sensitivity Parameter Λ",
-    x        = "Sensitivity parameter  Λ",
-    y        = "Identified set for E[Y(1)]",
+  # Customizing the merged legend for color and linetype
+  scale_color_manual(
+    name = "Reference Lines",
+    values = c("True E[Y(1)]" = "black", "Naive IPW" = "steelblue")
   ) +
-  theme_minimal(base_size = 13) +
+  scale_linetype_manual(
+    name = "Reference Lines",
+    values = c("True E[Y(1)]" = "dashed", "Naive IPW" = "solid")
+  ) +
+  labs(
+    title    = "Identified Set for E[Y(1)]",
+    x        = "Sensitivity parameter  Λ",
+    y        = "E[Y(1)]",
+  ) +
+  theme_minimal(base_size = 22) +
   theme(
     plot.title    = element_text(face = "bold"),
-    plot.subtitle = element_text(color = "grey40", size = 10)
   )
 
 # Print plots
