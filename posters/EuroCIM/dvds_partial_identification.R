@@ -164,6 +164,9 @@ cat("\n")
 #  This gives the identified SET for the conditional mean
 #  potential outcome as a function of X.
 
+# I don't think this is the correct way to go about it.
+# Maybe it is, but play it safe for the conference.
+
 dvds_conditional_bounds <- function(Y, A, X, pi_hat, Lambda,
                                     x_grid, bandwidth = 0.4) {
 

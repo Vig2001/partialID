@@ -1,6 +1,4 @@
-"""The aim of this file is to get a feel for how the correction function in Jake's paper 
-changes with confoudning, hopefully giving some intuition on the relation between smoothness
-and confounding functions. So here I forget transportability violations in the RCT for now."""
+"""How does omitting variables affect CATE estimation?"""
 
 # Plan:
 # 1. Specify distributions of U and X
@@ -26,10 +24,6 @@ import scipy.integrate as integrate
 import scipy.stats as stats
 
 def potential_outcomes(X, U, gamma_uy):
-    # We assume that the RCT captures the CATE exactly
-    # Since U is standard normal (mean 0)
-    # The true CATE is 1.5X - confused on this slightly
-    # I think we define the estimand to only be conditioned on X, hence U is averaged
     Y0 = 1.0 + 0.5 * X + U
     Y1 = 1.0 + 2.0 * X + gamma_uy * U
     ite = Y1 - Y0
@@ -38,10 +32,7 @@ def potential_outcomes(X, U, gamma_uy):
 
 def u_mean(X):
     """Returns the mean of U given X"""
-    if X < 1:
-        return 0.0
-    else:
-        return 4.0
+    return 4
     
 
 def u_std(X):
@@ -84,7 +75,7 @@ def marginal_propensity(X, T, alpha, gamma_ut):
     if T:
         # we assume U is independent of X and thus P(U | X) = P(U)
         # # this is numerical and so chose -10 to 10 because we are 10 sd away and comp faster
-        marg = integrate.quad(lambda u: propensity_score(X, u) 
+        marg = integrate.quad(lambda u: propensity_score(X, u, gamma_ut, alpha) 
                               * stats.norm.pdf(u, loc=u_mean(X), scale=u_std(X)), -10, 10)[0]
 
         return marg
@@ -94,8 +85,7 @@ def marginal_propensity(X, T, alpha, gamma_ut):
     return marg
 
 # Below we split the CATE into two parts by conditioning on A = 1 and A = 0
-# The following are used to find the true confounded OS CATE 
-# Under the FALSE conditional exchangeability assumption
+# The following are used to find the true CATE
 def catt_func(X, alpha, gamma_uy, gamma_ut):
     """True average effect for those who ACTUALLY received treatment."""
     marg_p = marginal_propensity(X, T=1, alpha=alpha, gamma_ut=gamma_ut)
@@ -113,9 +103,6 @@ def catc_func(X, alpha, gamma_uy, gamma_ut):
     return catc
 
 def true_cate_func(X, alpha, gamma_uy, gamma_ut):
-    """
-    
-    """
     cate_1 = catt_func(X, alpha, gamma_uy, gamma_ut) * marginal_propensity(X, 1, alpha, gamma_ut)
     cate_0 = catc_func(X, alpha, gamma_uy, gamma_ut) * marginal_propensity(X, 0, alpha, gamma_ut)
     return cate_1 + cate_0
@@ -142,9 +129,9 @@ def os_cate_func(X, alpha, gamma_uy, gamma_ut):
 
 # --- Plot  ---
 
-alpha_val = 1.0       # Effect of X on Treatment
-gamma_uy_val = -1 # Effect of U on Outcome
-gamma_ut_val = 4  # Effect of U on Treatment
+alpha_val = 1.0    # Effect of X on Treatment
+gamma_uy_val = 3.0 # Effect of U on Outcome
+gamma_ut_val = 6.0 # Effect of U on Treatment
 
 # (Using 50 points to keep the numerical integration fast but the line smooth)
 x_vals = np.linspace(-3, 3, 50)
@@ -171,16 +158,16 @@ plt.figure(figsize=(10, 6))
 
 plt.plot(x_vals, true_cate_vals, label='True CATE', color='blue', linewidth=2, linestyle='--')
 plt.plot(x_vals, confounded_cate_vals, label='Confounded OS CATE', color='red', linewidth=2)
-plt.plot(x_vals, correction_vals, label='Correction Function $\Delta(X)$', color='purple', linewidth=2)
+#plt.plot(x_vals, correction_vals, label='Correction Function $\Delta(X)$', color='purple', linewidth=2)
 
 # Formatting the plot
 plt.axhline(0, color='black', linestyle=':', alpha=0.6)
 plt.axvline(0, color='black', linestyle=':', alpha=0.6)
 
-plt.title(f'The Correction Function\n'
+plt.title(f'Hidden Confounding in OS\n'
           f'($\\gamma_{{UY}}$={gamma_uy_val}, $\\gamma_{{UT}}$={gamma_ut_val})', fontsize=14)
 plt.xlabel('Covariate $X$', fontsize=12)
-plt.ylabel('Treatment Effect / Bias', fontsize=12)
+plt.ylabel('Treatment Effect', fontsize=12)
 plt.legend(fontsize=11)
 plt.grid(True, alpha=0.3)
 
