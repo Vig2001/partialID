@@ -15,13 +15,13 @@
 # Then what does the correction function look like for different out and prop models
 # What happens if the out model isn't smooth?
 
-# Extension: relate the strength of U on T to the Marginal Sensitivity Model
-
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.integrate as integrate
 import scipy.stats as stats
+
+# OS
 
 def potential_outcomes(X, U, gamma_uy):
     Y0 = 1.0 + 0.5 * X + U
@@ -127,56 +127,154 @@ def os_cate_func(X, alpha, gamma_uy, gamma_ut):
     return e_y1_given_t1 - e_y0_given_t0
 
 
-# --- Plot  ---
+# RCT
 
-alpha_val = 1.0    # Effect of X on Treatment
-gamma_uy_val = 3.0 # Effect of U on Outcome
-gamma_ut_val = 6.0 # Effect of U on Treatment
+def rct_ite(X, V, gamma_vy, gamma_xv):
+    """
+    Individual Treatment Effect now includes:
+    1. A linear effect of V (gamma_vy * V)
+    2. An interaction between observed X and unobserved V (gamma_xv * X * V)
+    """
+    return 8.0 + 1.5 * X + (gamma_vy * V) + (gamma_xv * X * V)
 
-# (Using 50 points to keep the numerical integration fast but the line smooth)
+def rct_estimated_cate(X, gamma_vy, gamma_xv, v_mean_rct, v_std):
+    """Integrates over the distribution of V present in the trial."""
+    rct_cate = integrate.quad(
+        lambda v: rct_ite(X, v, gamma_vy, gamma_xv) * stats.norm.pdf(v, loc=v_mean_rct, scale=v_std), 
+        -10, 10
+    )[0]
+    return rct_cate
+
+def target_true_cate(X, gamma_vy, gamma_xv, v_mean_target, v_std):
+    """Integrates over the distribution of V present IN THE TARGET POPULATION."""
+    target_cate = integrate.quad(
+        lambda v: rct_ite(X, v, gamma_vy, gamma_xv) * stats.norm.pdf(v, loc=v_mean_target, scale=v_std), 
+        -10, 10
+    )[0]
+    return target_cate
+
+
+# PLOTTING
+
+# --- OS Parameters ---
+alpha_val = 1.0    
+gamma_uy_val = 3.0 
+gamma_ut_val = 6.0 
+
+# --- RCT Parameters ---
+gamma_vy_val = 1.0         # Linear effect of V  
+gamma_xv_val = 1.5         # Interaction effect between X and V
+
+v_mean_rct_val = 4.0       # Mean of V in the clinical trial
+v_mean_target_val = 0.0    # Mean of V in the real-world target population
+v_std_val = 1.0            # Variance of V
+
 x_vals = np.linspace(-3, 3, 50)
 
-true_cate_vals = []
-confounded_cate_vals = []
-correction_vals = []
+# Data arrays
+true_cate_os_vals = []
+confounded_cate_os_vals = []
+rct_estimated_vals = []
+true_cate_target_vals = []
 
 print("Calculating integrals, this might take a few seconds...")
 
 for x in x_vals:
-    # 1. The True Unconfounded CATE
-    true_val = true_cate_func(x, alpha_val, gamma_uy_val, gamma_ut_val) 
-    true_cate_vals.append(true_val)
+    # 1. OS Integration
+    true_cate_os_vals.append(true_cate_func(x, alpha_val, gamma_uy_val, gamma_ut_val))
+    confounded_cate_os_vals.append(os_cate_func(x, alpha_val, gamma_uy_val, gamma_ut_val))
     
-    # 2. The True Confounded OS CATE
-    confounded_val = os_cate_func(x, alpha_val, gamma_uy_val, gamma_ut_val)
-    confounded_cate_vals.append(confounded_val)
-    
-    # 3. The True Correction Function
-    correction_vals.append(true_val - confounded_val)
+    # 2. RCT Integration
+    rct_estimated_vals.append(rct_estimated_cate(x, gamma_vy_val, gamma_xv_val, v_mean_rct_val, v_std_val))
+    true_cate_target_vals.append(target_true_cate(x, gamma_vy_val, gamma_xv_val, v_mean_target_val, v_std_val))
 
+# --- Figure 1: Observational Study (Confounding) ---
+fig1, ax1 = plt.subplots(figsize=(8, 6))
+
+ax1.plot(x_vals, true_cate_os_vals, label='True Unconfounded CATE', color='blue', linewidth=2, linestyle='--')
+ax1.plot(x_vals, confounded_cate_os_vals, label='Confounded OS CATE', color='red', linewidth=2)
+
+ax1.axhline(0, color='black', linestyle=':', alpha=0.6)
+ax1.axvline(0, color='black', linestyle=':', alpha=0.6)
+ax1.set_title(f'Hidden Confounding in OS\n($\\gamma_{{UY}}$={gamma_uy_val}, $\\gamma_{{UT}}$={gamma_ut_val})', fontsize=14)
+ax1.set_xlabel('Observed Covariate $X$', fontsize=12)
+ax1.set_ylabel('Treatment Effect', fontsize=12)
+ax1.set_ylim(-10, 30)
+ax1.legend(fontsize=11)
+ax1.grid(True, alpha=0.3)
+
+fig1.tight_layout()
+#fig1.savefig("os_confounding.pdf", format="pdf", bbox_inches="tight")
+
+
+# --- Figure 2: RCT (Complex Effect Modification) ---
+fig2, ax2 = plt.subplots(figsize=(8, 6))
+
+ax2.plot(x_vals, true_cate_target_vals, label=f'True Target CATE', color='green', linewidth=2, linestyle='--')
+ax2.plot(x_vals, rct_estimated_vals, label=f'RCT Estimated CATE', color='purple', linewidth=2)
+
+# Annotate the dynamic bias
+mid_idx = 40  # Placed further right to show the fanning clearly
+ax2.annotate('', xy=(x_vals[mid_idx], true_cate_target_vals[mid_idx]), 
+             xytext=(x_vals[mid_idx], rct_estimated_vals[mid_idx]))
+
+ax2.axhline(0, color='black', linestyle=':', alpha=0.6)
+ax2.axvline(0, color='black', linestyle=':', alpha=0.6)
+ax2.set_title(f'Effect Modification in RCT\n(Trial $\\mu_{{V}}$={v_mean_rct_val}, Target $\\mu_{{V}}$={v_mean_target_val})', fontsize=14)
+ax2.set_xlabel('Observed Covariate $X$', fontsize=12)
+ax2.set_ylabel('Treatment Effect', fontsize=12) # Added ylabel for the standalone plot
+ax2.set_ylim(-10, 30)
+ax2.legend(fontsize=11)
+ax2.grid(True, alpha=0.3)
+
+fig2.tight_layout()
+#fig2.savefig("rct_modification.pdf", format="pdf", bbox_inches="tight")
+
+
+# ---- Illustration of Proposed Method ----- 
+# 1. Define the x-axis range
+x = np.linspace(-2.0, 2.5, 500)
+
+# 2. Define the two intersecting cubic curves
+y1 = x**3
+y2 = x**3 + x**2 - 2
+
+# 3. Define the bounds (envelope) for each curve
+# Using a constant margin, but you could make this a function of x (e.g., standard error)
+margin = 2.0
+
+y1_upper = y1 + margin
+y1_lower = y1 - margin
+
+y2_upper = y2 + margin
+y2_lower = y2 - margin
+
+# Create the plot canvas
 plt.figure(figsize=(10, 6))
 
-plt.plot(x_vals, true_cate_vals, label='True CATE', color='blue', linewidth=2, linestyle='--')
-plt.plot(x_vals, confounded_cate_vals, label='Confounded OS CATE', color='red', linewidth=2)
-#plt.plot(x_vals, correction_vals, label='Correction Function $\Delta(X)$', color='purple', linewidth=2)
+# 4. Plot Curve 1 and shade its envelope
+plt.plot(x, y1, label=r'OS CATE', color='#1f77b4', linewidth=2.5)
+plt.fill_between(x, y1_lower, y1_upper, color='#1f77b4', alpha=0.2)
 
-# Formatting the plot
-plt.axhline(0, color='black', linestyle=':', alpha=0.6)
-plt.axvline(0, color='black', linestyle=':', alpha=0.6)
+# 5. Plot Curve 2 and shade its envelope
+plt.plot(x, y2, label=r'RCT CATE', color='#ff7f0e', linewidth=2.5)
+plt.fill_between(x, y2_lower, y2_upper, color='#ff7f0e', alpha=0.2)
 
-plt.title(f'Hidden Confounding in OS\n'
-          f'($\\gamma_{{UY}}$={gamma_uy_val}, $\\gamma_{{UT}}$={gamma_ut_val})', fontsize=14)
-plt.xlabel('Covariate $X$', fontsize=12)
+# 6. Formatting the plot
+plt.axhline(0, color='black', linewidth=1, linestyle=":", alpha=0.6) # x-axis
+plt.axvline(0, color='black', linewidth=1, linestyle=":", alpha=0.6) # y-axis
+
+# Set limits to keep the view focused on the intersection
+plt.xlim(-1.5, 2.5)
+plt.ylim(-6, 8)
+
+plt.xlabel('Observed Covariate X', fontsize=12)
 plt.ylabel('Treatment Effect', fontsize=12)
-plt.legend(fontsize=11)
-plt.grid(True, alpha=0.3)
+plt.legend(loc='upper left', fontsize=11)
+plt.grid(True, linestyle='--', alpha=0.6)
 
+plt.savefig("proposed_method.pdf", format="pdf", bbox_inches="tight")
+
+# Render the plot
 plt.tight_layout()
 plt.show()
-
-
-
-
-
-
-
