@@ -194,6 +194,28 @@ fig1, ax1 = plt.subplots(figsize=(8, 6))
 ax1.plot(x_vals, true_cate_os_vals, label='True Unconfounded CATE', color='blue', linewidth=2, linestyle='--')
 ax1.plot(x_vals, confounded_cate_os_vals, label='Confounded OS CATE', color='red', linewidth=2)
 
+
+# Choose a point on the x-axis to draw the arrow (e.g., index 35 out of 50)
+idx = 35 
+
+# Draw the double-headed arrow
+ax1.annotate('', 
+             xy=(x_vals[idx], true_cate_os_vals[idx]), 
+             xytext=(x_vals[idx], confounded_cate_os_vals[idx]),
+             arrowprops=dict(arrowstyle='<->', color='black', lw=1.5))
+
+# Find the highest y-value between the two curves at this specific x index
+top_of_arrow = max(true_cate_os_vals[idx], confounded_cate_os_vals[idx])
+
+# Add the text label directly above the arrow
+ax1.text(x_vals[idx], 
+         top_of_arrow + 1.0,  # The "+ 1.0" gives it a little breathing room above the line
+         'Hidden\nConfounding', 
+         horizontalalignment='center',  # Centers the text exactly over the arrow
+         verticalalignment='bottom',    # Ensures the text sits neatly above the coordinate
+         fontsize=12)
+
+
 ax1.axhline(0, color='black', linestyle=':', alpha=0.6)
 ax1.axvline(0, color='black', linestyle=':', alpha=0.6)
 ax1.set_title(f'Hidden Confounding in OS\n($\\gamma_{{UY}}$={gamma_uy_val}, $\\gamma_{{UT}}$={gamma_ut_val})', fontsize=14)
@@ -204,19 +226,45 @@ ax1.legend(fontsize=11)
 ax1.grid(True, alpha=0.3)
 
 fig1.tight_layout()
-#fig1.savefig("os_confounding.pdf", format="pdf", bbox_inches="tight")
+fig1.savefig("os_confounding.pdf", format="pdf", bbox_inches="tight")
 
 
-# --- Figure 2: RCT (Complex Effect Modification) ---
+# --- Figure 2: RCT (Effect Modification) ---
 fig2, ax2 = plt.subplots(figsize=(8, 6))
 
 ax2.plot(x_vals, true_cate_target_vals, label=f'True Target CATE', color='green', linewidth=2, linestyle='--')
 ax2.plot(x_vals, rct_estimated_vals, label=f'RCT Estimated CATE', color='purple', linewidth=2)
 
-# Annotate the dynamic bias
-mid_idx = 40  # Placed further right to show the fanning clearly
-ax2.annotate('', xy=(x_vals[mid_idx], true_cate_target_vals[mid_idx]), 
-             xytext=(x_vals[mid_idx], rct_estimated_vals[mid_idx]))
+mid_idx = 35
+ax2.annotate('', 
+             xy=(x_vals[mid_idx], true_cate_target_vals[mid_idx]), 
+             xytext=(x_vals[mid_idx], rct_estimated_vals[mid_idx]),
+             arrowprops=dict(arrowstyle='<->', color='black', lw=1.5))
+
+ax2.text(x_vals[mid_idx] + 0.15, 
+         np.mean([true_cate_target_vals[idx], rct_estimated_vals[idx]]),  # Breathing room above the line
+         'Transportability\nViolation', 
+         verticalalignment='bottom',    # Sits the text neatly on top
+         fontsize=12)
+
+diff = np.array(true_cate_target_vals) - np.array(rct_estimated_vals)
+
+# (We reverse the arrays [::-1] because np.interp requires the x-coordinates to be increasing)
+x_intersect = np.interp(0, diff[::-1], x_vals[::-1])
+
+y_intersect = np.interp(x_intersect, x_vals, true_cate_target_vals)
+
+# Draw the vertical line and a dot at the intersection
+ax2.vlines(x=x_intersect, ymin=0, ymax=y_intersect, color='gray', linestyle='--', linewidth=1.5, alpha=0.8, zorder=1)
+ax2.scatter([x_intersect], [y_intersect], color='black', s=50, zorder=5) # s=50 makes the dot visible
+ax2.annotate(f'({x_intersect:.2f}, {y_intersect:.2f})', 
+             xy=(x_intersect, y_intersect), 
+             textcoords="offset points", 
+             xytext=(0, 10),  # Shifts the text exactly 10 points upwards
+             ha='right',
+             fontsize=10, 
+             bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=1.0))
+
 
 ax2.axhline(0, color='black', linestyle=':', alpha=0.6)
 ax2.axvline(0, color='black', linestyle=':', alpha=0.6)
@@ -228,7 +276,7 @@ ax2.legend(fontsize=11)
 ax2.grid(True, alpha=0.3)
 
 fig2.tight_layout()
-#fig2.savefig("rct_modification.pdf", format="pdf", bbox_inches="tight")
+fig2.savefig("rct_modification.pdf", format="pdf", bbox_inches="tight")
 
 
 # ---- Illustration of Proposed Method ----- 
@@ -252,15 +300,14 @@ y2_lower = y2 - margin
 # Create the plot canvas
 plt.figure(figsize=(10, 6))
 
-# 4. Plot Curve 1 and shade its envelope
+# Plot Curve 1 and shade its envelope
 plt.plot(x, y1, label=r'OS CATE', color='#1f77b4', linewidth=2.5)
 plt.fill_between(x, y1_lower, y1_upper, color='#1f77b4', alpha=0.2)
 
-# 5. Plot Curve 2 and shade its envelope
+# Plot Curve 2 and shade its envelope
 plt.plot(x, y2, label=r'RCT CATE', color='#ff7f0e', linewidth=2.5)
 plt.fill_between(x, y2_lower, y2_upper, color='#ff7f0e', alpha=0.2)
 
-# 6. Formatting the plot
 plt.axhline(0, color='black', linewidth=1, linestyle=":", alpha=0.6) # x-axis
 plt.axvline(0, color='black', linewidth=1, linestyle=":", alpha=0.6) # y-axis
 
@@ -273,7 +320,7 @@ plt.ylabel('Treatment Effect', fontsize=12)
 plt.legend(loc='upper left', fontsize=11)
 plt.grid(True, linestyle='--', alpha=0.6)
 
-plt.savefig("proposed_method.pdf", format="pdf", bbox_inches="tight")
+#plt.savefig("proposed_method.pdf", format="pdf", bbox_inches="tight")
 
 # Render the plot
 plt.tight_layout()
