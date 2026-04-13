@@ -20,6 +20,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import scipy.integrate as integrate
 import scipy.stats as stats
+from scipy.special import expit
 
 # OS
 
@@ -130,23 +131,38 @@ def os_cate_func(X, alpha, gamma_uy, gamma_ut):
 # RCT
 
 def rct_ite(X, V, gamma_vy, gamma_xv):
-    """
-    Individual Treatment Effect now includes:
-    1. A linear effect of V (gamma_vy * V)
-    2. An interaction between observed X and unobserved V (gamma_xv * X * V)
-    """
     return 8.0 + 1.5 * X + (gamma_vy * V) + (gamma_xv * X * V)
 
-def rct_estimated_cate(X, gamma_vy, gamma_xv, v_mean_rct, v_std):
-    """Integrates over the distribution of V present in the trial."""
+# Probability of being selected into the RCT based on V, P(S=1 | V)
+def selection_prob(V, alpha_s, gamma_s):
+    """P(S=1 | V): Logistic model for trial inclusion."""
+    return expit(alpha_s + gamma_s * V)
+
+# The overall probability of being in the trial (normalization constant) P(S=1)
+def marginal_selection_prob(alpha_s, gamma_s, v_mean_target, v_std):
+    """Integrates P(S=1 | V) * f(V) over V to get P(S=1)."""
+    prob = integrate.quad(
+        lambda v: selection_prob(v, alpha_s, gamma_s) * stats.norm.pdf(v, loc=v_mean_target, scale=v_std), 
+        -10, 10
+    )[0]
+    return prob
+
+def rct_estimated_cate(X, gamma_vy, gamma_xv, alpha_s, gamma_s, v_mean_target, v_std):
+    """
+    Estimates the CATE for the trial population. 
+    Integrates over f(V | S=1) using Bayes' rule.
+    """
+    p_s = marginal_selection_prob(alpha_s, gamma_s, v_mean_target, v_std)
+    
+    # f(V | S=1) = P(S=1 | V) * f(V) / P(S-1)
     rct_cate = integrate.quad(
-        lambda v: rct_ite(X, v, gamma_vy, gamma_xv) * stats.norm.pdf(v, loc=v_mean_rct, scale=v_std), 
+        lambda v: rct_ite(X, v, gamma_vy, gamma_xv) * (selection_prob(v, alpha_s, gamma_s) * stats.norm.pdf(v, loc=v_mean_target, scale=v_std) / p_s), 
         -10, 10
     )[0]
     return rct_cate
 
 def target_true_cate(X, gamma_vy, gamma_xv, v_mean_target, v_std):
-    """Integrates over the distribution of V present IN THE TARGET POPULATION."""
+    """True CATE for the target population (integrating over base V)."""
     target_cate = integrate.quad(
         lambda v: rct_ite(X, v, gamma_vy, gamma_xv) * stats.norm.pdf(v, loc=v_mean_target, scale=v_std), 
         -10, 10
@@ -165,9 +181,11 @@ gamma_ut_val = 6.0
 gamma_vy_val = 1.0         # Linear effect of V  
 gamma_xv_val = 1.5         # Interaction effect between X and V
 
-v_mean_rct_val = 4.0       # Mean of V in the clinical trial
 v_mean_target_val = 0.0    # Mean of V in the real-world target population
 v_std_val = 1.0            # Variance of V
+
+alpha_s_val = -40.0      # Baseline log-odds of inclusion
+gamma_s_val = 10.0         # High V strongly increases chance of selection into trial
 
 x_vals = np.linspace(-3, 3, 50)
 
@@ -185,14 +203,14 @@ for x in x_vals:
     confounded_cate_os_vals.append(os_cate_func(x, alpha_val, gamma_uy_val, gamma_ut_val))
     
     # 2. RCT Integration
-    rct_estimated_vals.append(rct_estimated_cate(x, gamma_vy_val, gamma_xv_val, v_mean_rct_val, v_std_val))
+    rct_estimated_vals.append(rct_estimated_cate(x, gamma_vy_val, gamma_xv_val, alpha_s_val, gamma_s_val, v_mean_target_val, v_std_val))
     true_cate_target_vals.append(target_true_cate(x, gamma_vy_val, gamma_xv_val, v_mean_target_val, v_std_val))
 
 # --- Figure 1: Observational Study (Confounding) ---
-fig1, ax1 = plt.subplots(figsize=(8, 6))
+fig1, ax1 = plt.subplots(figsize=(280/25.4, 180/25.4))
 
-ax1.plot(x_vals, true_cate_os_vals, label='True Unconfounded CATE', color='blue', linewidth=2, linestyle='--')
-ax1.plot(x_vals, confounded_cate_os_vals, label='Confounded OS CATE', color='red', linewidth=2)
+ax1.plot(x_vals, true_cate_os_vals, label='True Unconfounded CATE', color='blue', linewidth=2.5, linestyle='--')
+ax1.plot(x_vals, confounded_cate_os_vals, label='Confounded OS CATE', color='red', linewidth=2.5)
 
 
 # Choose a point on the x-axis to draw the arrow (e.g., index 35 out of 50)
@@ -209,43 +227,51 @@ top_of_arrow = max(true_cate_os_vals[idx], confounded_cate_os_vals[idx])
 
 # Add the text label directly above the arrow
 ax1.text(x_vals[idx], 
-         top_of_arrow + 1.0,  # The "+ 1.0" gives it a little breathing room above the line
+         top_of_arrow + 2.0,  # The "+ 1.0" gives it a little breathing room above the line
          'Hidden\nConfounding', 
          horizontalalignment='center',  # Centers the text exactly over the arrow
          verticalalignment='bottom',    # Ensures the text sits neatly above the coordinate
-         fontsize=12)
+         fontsize=26)
 
 
 ax1.axhline(0, color='black', linestyle=':', alpha=0.6)
 ax1.axvline(0, color='black', linestyle=':', alpha=0.6)
-ax1.set_title(f'Hidden Confounding in OS\n($\\gamma_{{UY}}$={gamma_uy_val}, $\\gamma_{{UT}}$={gamma_ut_val})', fontsize=14)
-ax1.set_xlabel('Observed Covariate $X$', fontsize=12)
-ax1.set_ylabel('Treatment Effect', fontsize=12)
+ax1.set_title(f'Hidden Confounding in OS', fontsize=38)
+ax1.set_xlabel('Observed Covariate $X$', fontsize=30)
+ax1.set_ylabel('Treatment Effect', fontsize=30)
 ax1.set_ylim(-10, 30)
-ax1.legend(fontsize=11)
+ax1.legend(fontsize=24, loc="upper left")
 ax1.grid(True, alpha=0.3)
+
+ax1.tick_params(
+    axis="both",        # "x", "y", or "both"
+    labelsize=24,       # font size of tick labels
+    length=8,           # tick line length
+    width=1.5,          # tick line width
+    which="major",      # "major", "minor", or "both"
+)
 
 fig1.tight_layout()
 fig1.savefig("os_confounding.pdf", format="pdf", bbox_inches="tight")
 
 
 # --- Figure 2: RCT (Effect Modification) ---
-fig2, ax2 = plt.subplots(figsize=(8, 6))
+fig2, ax2 = plt.subplots(figsize=(280/25.4, 180/25.4))
 
-ax2.plot(x_vals, true_cate_target_vals, label=f'True Target CATE', color='green', linewidth=2, linestyle='--')
-ax2.plot(x_vals, rct_estimated_vals, label=f'RCT Estimated CATE', color='purple', linewidth=2)
+ax2.plot(x_vals, true_cate_target_vals, label=f'Target CATE', color='green', linewidth=2.5, linestyle='--')
+ax2.plot(x_vals, rct_estimated_vals, label=f'RCT CATE', color='purple', linewidth=2.5)
 
-mid_idx = 35
+mid_idx = 33
 ax2.annotate('', 
              xy=(x_vals[mid_idx], true_cate_target_vals[mid_idx]), 
              xytext=(x_vals[mid_idx], rct_estimated_vals[mid_idx]),
              arrowprops=dict(arrowstyle='<->', color='black', lw=1.5))
 
-ax2.text(x_vals[mid_idx] + 0.15, 
-         np.mean([true_cate_target_vals[idx], rct_estimated_vals[idx]]),  # Breathing room above the line
+ax2.text(x_vals[mid_idx] + 0.05, 
+         np.mean([true_cate_target_vals[idx], rct_estimated_vals[idx]])-3,
          'Transportability\nViolation', 
          verticalalignment='bottom',    # Sits the text neatly on top
-         fontsize=12)
+         fontsize=26)
 
 diff = np.array(true_cate_target_vals) - np.array(rct_estimated_vals)
 
@@ -255,25 +281,34 @@ x_intersect = np.interp(0, diff[::-1], x_vals[::-1])
 y_intersect = np.interp(x_intersect, x_vals, true_cate_target_vals)
 
 # Draw the vertical line and a dot at the intersection
-ax2.vlines(x=x_intersect, ymin=0, ymax=y_intersect, color='gray', linestyle='--', linewidth=1.5, alpha=0.8, zorder=1)
-ax2.scatter([x_intersect], [y_intersect], color='black', s=50, zorder=5) # s=50 makes the dot visible
-ax2.annotate(f'({x_intersect:.2f}, {y_intersect:.2f})', 
-             xy=(x_intersect, y_intersect), 
-             textcoords="offset points", 
-             xytext=(0, 10),  # Shifts the text exactly 10 points upwards
-             ha='right',
-             fontsize=10, 
-             bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=1.0))
+# ax2.vlines(x=x_intersect, ymin=0, ymax=y_intersect, color='gray', linestyle='--', linewidth=1.5, alpha=0.8, zorder=1)
+# ax2.scatter([x_intersect], [y_intersect], color='black', s=50, zorder=5) # s=50 makes the dot visible
+# ax2.annotate(f'({x_intersect:.2f}, {y_intersect:.2f})', 
+             #xy=(x_intersect, y_intersect), 
+             #textcoords="offset points", 
+             #xytext=(0, 10),  # Shifts the text exactly 10 points upwards
+             #ha='right',
+             #fontsize=24, 
+             #bbox=dict(facecolor='white', edgecolor='none', alpha=0.7, pad=1.0))
 
 
 ax2.axhline(0, color='black', linestyle=':', alpha=0.6)
 ax2.axvline(0, color='black', linestyle=':', alpha=0.6)
-ax2.set_title(f'Effect Modification in RCT\n(Trial $\\mu_{{V}}$={v_mean_rct_val}, Target $\\mu_{{V}}$={v_mean_target_val})', fontsize=14)
-ax2.set_xlabel('Observed Covariate $X$', fontsize=12)
-ax2.set_ylabel('Treatment Effect', fontsize=12) # Added ylabel for the standalone plot
+ax2.set_title(f'Transportability Violation in RCT', fontsize=38)
+ax2.set_xlabel('Observed Covariate $X$', fontsize=30)
+ax2.set_ylabel('Treatment Effect', fontsize=30) # Added ylabel for the standalone plot
 ax2.set_ylim(-10, 30)
-ax2.legend(fontsize=11)
+ax2.legend(fontsize=22)
 ax2.grid(True, alpha=0.3)
+
+# tick sizes
+ax2.tick_params(
+    axis="both",        # "x", "y", or "both"
+    labelsize=22,       # font size of tick labels
+    length=8,           # tick line length
+    width=1.5,          # tick line width
+    which="major",      # "major", "minor", or "both"
+)
 
 fig2.tight_layout()
 fig2.savefig("rct_modification.pdf", format="pdf", bbox_inches="tight")
@@ -298,7 +333,7 @@ y2_upper = y2 + margin
 y2_lower = y2 - margin
 
 # Create the plot canvas
-plt.figure(figsize=(10, 6))
+plt.figure(figsize=(280/25.4, 180/25.4))
 
 # Plot Curve 1 and shade its envelope
 plt.plot(x, y1, label=r'OS CATE', color='#1f77b4', linewidth=2.5)
@@ -308,19 +343,30 @@ plt.fill_between(x, y1_lower, y1_upper, color='#1f77b4', alpha=0.2)
 plt.plot(x, y2, label=r'RCT CATE', color='#ff7f0e', linewidth=2.5)
 plt.fill_between(x, y2_lower, y2_upper, color='#ff7f0e', alpha=0.2)
 
-plt.axhline(0, color='black', linewidth=1, linestyle=":", alpha=0.6) # x-axis
-plt.axvline(0, color='black', linewidth=1, linestyle=":", alpha=0.6) # y-axis
+plt.axhline(0, color='black', linewidth=1.5, linestyle=":", alpha=0.6) # x-axis
+plt.axvline(0, color='black', linewidth=1.5, linestyle=":", alpha=0.6) # y-axis
 
 # Set limits to keep the view focused on the intersection
 plt.xlim(-1.5, 2.5)
 plt.ylim(-6, 8)
 
-plt.xlabel('Observed Covariate X', fontsize=12)
-plt.ylabel('Treatment Effect', fontsize=12)
-plt.legend(loc='upper left', fontsize=11)
+plt.xlabel('Observed Covariate X', fontsize=30)
+plt.ylabel('Treatment Effect', fontsize=30)
+plt.legend(loc='upper left', fontsize=24)
 plt.grid(True, linestyle='--', alpha=0.6)
 
-#plt.savefig("proposed_method.pdf", format="pdf", bbox_inches="tight")
+plt.tick_params(
+    axis="both",        # "x", "y", or "both"
+    labelsize=24,       # font size of tick labels
+    length=8,           # tick line length
+    width=1.5,          # tick line width
+    which="major",      # "major", "minor", or "both"
+)
+
+
+plt.savefig("proposed_method.pdf", format="pdf", bbox_inches="tight")
+
+
 
 # Render the plot
 plt.tight_layout()
