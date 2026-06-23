@@ -37,12 +37,12 @@ from point_bounds import (
 
 rng = np.random.default_rng(7)
 
-n = 40_000
+n = 5000
 dat = simulate_dgp(n)
 tau = true_tau_S0()
 
 grid = np.exp(np.linspace(0, np.log(4), 7))      # grid of sensitivity parameters - both taken to be equal
-B = 500
+B = 1000
 alpha = 0.05
 
 idx_all = np.arange(n)
@@ -129,10 +129,10 @@ ax.legend(loc="upper left", frameon=False, fontsize=8)
 
 ax = axes[1]
 ax.fill_between(res.g, res.fci_lo, res.fci_hi, color="darkgreen", alpha=0.30,
-                label="fused: intersect the CIs (defensible)")
+                label="fused: intersect the CIs")
 ax.plot(res.g, res.fb_lo, color="purple", lw=2, ls="--")
 ax.plot(res.g, res.fb_hi, color="purple", lw=2, ls="--",
-        label="fused: bootstrap the min/max (not justified)")
+        label="fused: bootstrap the min/max")
 ax.axhline(tau, ls="--", lw=2, color="black", label=r"true $\tau_{S=0}$")
 ax.set_xscale("log")
 ax.set_xlabel(r"$\Lambda=\Gamma=g$ (diagonal slice)")

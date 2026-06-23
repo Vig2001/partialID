@@ -14,14 +14,14 @@
 #   cap markers    = CI endpoints
 #
 # For the FUSED set we now draw BOTH bootstrap CI constructions side by side:
-#   (1) intersect-the-CIs, green solid whisker:
+#   (1) intersect-the-CIs (defensible), green solid whisker:
 #         [max(L_zsb_ci, L_niw_ci),  min(U_zsb_ci, U_niw_ci)]
-#   (2) bootstrap-the-min/max, purple dashed whisker:
+#   (2) bootstrap-the-min/max (tempting, not justified), purple dashed whisker:
 #         within each resample form [max(Lz,Ln), min(Uz,Un)], then take
 #         the qlo / qhi percentiles of those fused endpoints.
-# (2) is WEAKLY narrower than (1) and strictly narrower only when the source
-# of an endpoint flips across resamples (see frac_empty / the forced-
-# crossing demo in bootstrap_bounds.py). Both share ONE identified bar (?)
+# (2) is WEAKLY narrower than (1) and strictly narrower only when which source
+# binds an endpoint flips across resamples (see frac_empty / the forced-
+# crossing demo in bootstrap_bounds.py). Both share ONE identified bar.
 # ============================================================================
 
 import numpy as np
@@ -52,11 +52,11 @@ param_pairs = [
 ]
 # ---------------------------------------------------------------------------
 
-n = 40_000
-B = 500
-alpha = 0.05  
+n = 5_000
+B = 1000             
+alpha = 0.05   
 EMPTY_TOL = 1e-9    # an interval counts as empty only if lo exceeds hi by
-                    # more than this; guards against rounding/floating point errors
+                    # more than this; guards against ULP-level crossings at
                     # Lambda=1 / Gamma=1 where lo and hi are mathematically equal
 
 dat = simulate_dgp(n)
@@ -95,7 +95,8 @@ for (Lam, Gam) in param_pairs:
     fci = (max(zci[0], nci[0]), min(zci[1], nci[1]))   # (1) intersect-the-CIs
 
     # (2) bootstrap-the-min/max: intersect WITHIN each resample, then quantile.
-    # Reuses the same draws as the per-source CIs above
+    # Reuses the same draws as the per-source CIs above (apples-to-apples, and
+    # no second bootstrap pass).
     Lf = np.maximum(Lz, Ln)
     Uf = np.minimum(Uz, Un)
     fb = (np.percentile(Lf, qlo), np.percentile(Uf, qhi))
@@ -143,7 +144,7 @@ def draw_interval(x, pt_lo, pt_hi, ci_lo, ci_hi, color):
     if pt_lo > pt_hi + EMPTY_TOL:
         ax.plot(x, tau, marker="x", ms=9, mew=2, color=color, zorder=5)
         return
-    pt_lo, pt_hi = min(pt_lo, pt_hi), max(pt_lo, pt_hi)   # clean unit last point cross
+    pt_lo, pt_hi = min(pt_lo, pt_hi), max(pt_lo, pt_hi)   # clean ULP cross
     ax.plot([x, x], [ci_lo, ci_hi], color=color, lw=1.6,
             alpha=0.55, solid_capstyle="round", zorder=2)
     ax.plot([x, x], [ci_lo, ci_hi], marker="_", ms=9, ls="none",
@@ -160,29 +161,44 @@ for k, r in res.iterrows():
         draw_interval(k + off, r[f"{pre}_lo"], r[f"{pre}_hi"],
                       r[f"{pre}ci_lo"], r[f"{pre}ci_hi"], color)
 
-    # fused: ONE identified bar, TWO competing CI whiskers
-    if r.f_lo > r.f_hi + EMPTY_TOL:               # genuinely empty intersection
-        ax.plot(k + FUSED_X, tau, marker="x", ms=9, mew=2,
+    # fused: BLUE identified-bounds line (centered), with the two competing
+    # CI whiskers flanking it. CI emptiness is judged INDEPENDENTLY of the
+    # point-bound emptiness -- the point set can be empty (the pair is
+    # point-falsified) while the CIs still overlap.
+    xc = k + FUSED_X
+
+    # (a) fused point-identified bounds, in green (previous scheme)
+    if r.f_lo <= r.f_hi + EMPTY_TOL:                 # non-empty identified set
+        flo, fhi = min(r.f_lo, r.f_hi), max(r.f_lo, r.f_hi)
+        ax.plot([xc, xc], [flo, fhi], color="darkgreen", lw=5.5,
+                alpha=0.45, solid_capstyle="butt", zorder=4)
+        ax.plot([xc, xc], [flo, fhi], marker="o", ms=5, ls="none",
                 color="darkgreen", zorder=5)
-        continue
-    flo, fhi = min(r.f_lo, r.f_hi), max(r.f_lo, r.f_hi)
-    # shared identified bar (centered)
-    ax.plot([k + FUSED_X] * 2, [flo, fhi], color="darkgreen", lw=5.5,
-            alpha=0.40, solid_capstyle="butt", zorder=3)
-    ax.plot([k + FUSED_X] * 2, [flo, fhi], marker="o", ms=5, ls="none",
-            color="darkgreen", zorder=4)
-    # (1) intersect-the-CIs whisker: green solid, left
-    xL = k + FUSED_X - DX
-    ax.plot([xL, xL], [r.fci_lo, r.fci_hi], color="darkgreen", lw=1.7,
-            alpha=0.75, zorder=2)
-    ax.plot([xL, xL], [r.fci_lo, r.fci_hi], marker="_", ms=8, ls="none",
-            color="darkgreen", alpha=0.85, zorder=3)
-    # (2) bootstrap-the-min/max whisker: purple dashed, right
-    xR = k + FUSED_X + DX
-    ax.plot([xR, xR], [r.fb_lo, r.fb_hi], color="purple", lw=1.7,
-            ls=(0, (3, 2)), alpha=0.85, zorder=2)
-    ax.plot([xR, xR], [r.fb_lo, r.fb_hi], marker="_", ms=8, ls="none",
-            color="purple", alpha=0.9, zorder=3)
+    else:                                            # empty: show the GAP
+        glo, ghi = r.f_hi, r.f_lo     # missing region [f_hi, f_lo], f_hi<f_lo
+        ax.plot([xc, xc], [glo, ghi], color="darkgreen", lw=1.2, ls=":",
+                alpha=0.6, zorder=2)
+        ax.plot([xc, xc], [glo, ghi], marker="_", ms=7, ls="none",
+                color="darkgreen", alpha=0.6, zorder=2)
+        ax.annotate(r"$\varnothing$", (xc, 0.5 * (glo + ghi)),
+                    color="darkgreen", fontsize=13, ha="center", va="center",
+                    zorder=6, fontweight="bold")
+
+    # (b) intersect-the-CIs whisker (defensible): green solid, left
+    if r.fci_lo <= r.fci_hi + EMPTY_TOL:
+        xL = xc - DX
+        ax.plot([xL, xL], [r.fci_lo, r.fci_hi], color="darkgreen", lw=1.7,
+                alpha=0.75, zorder=3)
+        ax.plot([xL, xL], [r.fci_lo, r.fci_hi], marker="_", ms=8, ls="none",
+                color="darkgreen", alpha=0.85, zorder=3)
+
+    # (c) bootstrap-the-min/max whisker (not justified): purple dashed, right
+    if r.fb_lo <= r.fb_hi + EMPTY_TOL:
+        xR = xc + DX
+        ax.plot([xR, xR], [r.fb_lo, r.fb_hi], color="purple", lw=1.7,
+                ls=(0, (3, 2)), alpha=0.85, zorder=3)
+        ax.plot([xR, xR], [r.fb_lo, r.fb_hi], marker="_", ms=8, ls="none",
+                color="purple", alpha=0.9, zorder=3)
 
 ax.axhline(tau, ls="--", lw=1.8, color="black", zorder=1)
 
@@ -192,22 +208,25 @@ ax.set_xticklabels([f"$\\Lambda$={L:g}\n$\\Gamma$={G:g}"
 ax.set_xlim(-0.6, len(param_pairs) - 0.3)
 ax.set_ylabel(r"$E[Y(1)-Y(0)\mid S=0]$")
 ax.set_xlabel("sensitivity-parameter pair")
-ax.set_title("Identified bounds (thick) and bootstrap CIs (thin) "
-             "by sensitivity pair")
+ax.set_title("Partial Identification Set with Bootstrap CIs "
+             "by Sensitivity Parameter Pair")
 
 # legend: source colors + the two fused CI constructions + conventions
 color_handles = [
     Line2D([0], [0], color="steelblue", lw=6, alpha=0.5, label="ZSB"),
     Line2D([0], [0], color="firebrick", lw=6, alpha=0.5, label="NIW"),
-    Line2D([0], [0], color="darkgreen", lw=6, alpha=0.5, label="Fused"),
+    Line2D([0], [0], color="darkgreen", lw=5.5, alpha=0.45,
+           label="Fused point bounds (i.e. no boot)"),
 ]
 style_handles = [
     Line2D([0], [0], color="gray", lw=5.5, alpha=0.45, label="identified bounds"),
     Line2D([0], [0], color="gray", lw=1.6, alpha=0.7, label="bootstrap CI"),
     Line2D([0], [0], color="darkgreen", lw=1.7, alpha=0.8,
-           label="fused CI: intersect"),
+           label="fused CI: intersect-CIs"),
     Line2D([0], [0], color="purple", lw=1.7, ls=(0, (3, 2)), alpha=0.85,
            label="fused CI: bootstrap min/max"),
+    Line2D([0], [0], color="darkgreen", lw=0, marker=r"$\varnothing$", ms=11,
+           label="fused point bounds empty (pair falsified)"),
     Line2D([0], [0], color="black", lw=1.8, ls="--", label=r"true $\tau_{S=0}$"),
 ]
 leg1 = ax.legend(handles=color_handles, loc="upper left",
