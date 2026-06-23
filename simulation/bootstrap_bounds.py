@@ -13,15 +13,14 @@
 #
 # For the FUSED set we deliberately compute TWO things to compare:
 #   (1) intersect-the-CIs   : [max(L_zsb_ci, L_niw_ci), min(U_zsb_ci, U_niw_ci)]
-#                             -- the defensible construction
+#                             -- the potentially valid construction
 #   (2) bootstrap-the-min/max: within each resample form the fused interval
 #                             [max(L^b_z, L^b_n), min(U^b_z, U^b_n)], then take
 #                             percentiles of those fused endpoints
-#                             -- the tempting-but-not-justified construction
-#   The user asked to "just see what happens" with (2); (1) is the reference.
+#                             -- unsure if valid but weakly tighter?
 #
 # Everything is on the diagonal slice Lambda = Gamma = g, clearly a SLICE of
-# the 2-D (Lambda, Gamma) surface (see fused_2d_surface.py), shown only
+# the 2-D (Lambda, Gamma) surface, shown only
 # because a 1-D axis is what a ribbon plot can display.
 # ============================================================================
 
@@ -29,7 +28,7 @@ import numpy as np
 import pandas as pd
 import matplotlib
 
-matplotlib.use("Agg")
+#matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 from point_bounds import (
@@ -43,8 +42,8 @@ dat = simulate_dgp(n)
 tau = true_tau_S0()
 
 grid = np.exp(np.linspace(0, np.log(4), 7))      # grid of sensitivity parameters - both taken to be equal
-B = 300
-alpha = 0.10                                     # 90% intervals
+B = 500
+alpha = 0.05
 
 idx_all = np.arange(n)
 
@@ -99,7 +98,7 @@ res["width_fused_ci"] = res.fci_hi - res.fci_lo
 res["width_fused_boot"] = res.fb_hi - res.fb_lo
 
 pd.set_option("display.width", 200, "display.max_columns", 30)
-print(f"True tau = {tau:.4f}   B = {B}   {int((1-alpha)*100)}% intervals\n")
+print(f"True tau = {tau:.4f}   B = {B}   CI\n")
 print(res.round(3).to_string(index=False))
 
 print("\nWidth comparison (fused): intersect-CIs vs bootstrap-the-min/max")
@@ -113,20 +112,19 @@ fig, axes = plt.subplots(1, 2, figsize=(13.5, 5.6), sharey=True)
 
 ax = axes[0]
 ax.fill_between(res.g, res.zci_lo, res.zci_hi, color="steelblue", alpha=0.20,
-                label="ZSB 90% bootstrap CI")
+                label="ZSB bootstrap CI")
 ax.plot(res.g, res.pz_lo, color="steelblue", lw=2)
 ax.plot(res.g, res.pz_hi, color="steelblue", lw=2,
         label="ZSB point bounds")
 ax.fill_between(res.g, res.nci_lo, res.nci_hi, color="firebrick", alpha=0.18,
-                label="NIW 90% bootstrap CI")
+                label="NIW bootstrap CI")
 ax.plot(res.g, res.pn_lo, color="firebrick", lw=2)
 ax.plot(res.g, res.pn_hi, color="firebrick", lw=2, label="NIW point bounds")
 ax.axhline(tau, ls="--", lw=2, color="black", label=r"true $\tau_{S=0}$")
 ax.set_xscale("log")
 ax.set_xlabel(r"$\Lambda=\Gamma=g$ (diagonal slice)")
 ax.set_ylabel(r"$E[Y(1)-Y(0)\mid S=0]$")
-ax.set_title("Point bounds vs percentile-bootstrap CIs\n"
-             "(bootstrap interval is wider, as it must be)")
+ax.set_title("Point bounds vs percentile-bootstrap CIs\n")
 ax.legend(loc="upper left", frameon=False, fontsize=8)
 
 ax = axes[1]
@@ -138,14 +136,13 @@ ax.plot(res.g, res.fb_hi, color="purple", lw=2, ls="--",
 ax.axhline(tau, ls="--", lw=2, color="black", label=r"true $\tau_{S=0}$")
 ax.set_xscale("log")
 ax.set_xlabel(r"$\Lambda=\Gamma=g$ (diagonal slice)")
-ax.set_title("Two ways to fuse under the bootstrap\n"
-             "they COINCIDE here (one source binds each endpoint by a wide "
-             "margin)")
+ax.set_title("Visualising Both Fusion Methods")
 ax.legend(loc="upper left", frameon=False, fontsize=8)
 
 fig.tight_layout()
-fig.savefig("bootstrap_bounds.png", dpi=110)
-print("\nPlot written to bootstrap_bounds.png")
+plt.show()
+#fig.savefig("bootstrap_bounds.png", dpi=110)
+#print("\nPlot written to bootstrap_bounds.png")
 
 # ---------------------------------------------------------------------------
 # Why they coincided, and a config that forces them apart
@@ -162,7 +159,7 @@ print("\nPlot written to bootstrap_bounds.png")
 # upper ~ 0.51, so min(Uz,Un) clips resample-by-resample.
 
 print("\n--- forced-crossing demo (Lambda=2.1 for ZSB, Gamma=1.26 for NIW) ---")
-Lam, Gam = 2.1, 1.26
+Lam, Gam = 3.5, 1.26
 Uz = np.empty(B); Un = np.empty(B)
 for b in range(B):
     d = dat.iloc[rng.integers(0, n, n)]

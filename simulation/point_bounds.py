@@ -38,7 +38,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 import matplotlib
 
-matplotlib.use("Agg")
+#matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 rng = np.random.default_rng(20260611)
@@ -82,7 +82,7 @@ def simulate_dgp(n,
     U_c = rng.binomial(1, 0.5, n)
 
     # selection into the trial depends on X1 and the unmeasured modifier U_m
-    pS = expit(-0.9 + 0.4 * X1 + gamma_s * U_m)
+    pS = expit(-4.0 + 0.4 * X1 + gamma_s * U_m)
     S = rng.binomial(1, pS)
 
     # treatment: randomized in the RCT, confounded by U_c in the OS
@@ -306,5 +306,6 @@ if __name__ == "__main__":
                  "and their intersection")
     ax.legend(loc="upper left", frameon=False)
     fig.tight_layout()
-    fig.savefig("fused_bounds_py.png", dpi=110)
-    print("\nPlot written to fused_bounds_py.png")
+    plt.show()
+    #fig.savefig("fused_bounds_py.png", dpi=110)
+    #print("\nPlot written to fused_bounds_py.png")
