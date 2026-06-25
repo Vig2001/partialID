@@ -14,9 +14,9 @@
 #   cap markers    = CI endpoints
 #
 # For the FUSED set we now draw BOTH bootstrap CI constructions side by side:
-#   (1) intersect-the-CIs (defensible), green solid whisker:
+#   (1) intersect-the-CIs, green solid whisker:
 #         [max(L_zsb_ci, L_niw_ci),  min(U_zsb_ci, U_niw_ci)]
-#   (2) bootstrap-the-min/max (tempting, not justified), purple dashed whisker:
+#   (2) bootstrap-the-min/max, purple dashed whisker:
 #         within each resample form [max(Lz,Ln), min(Uz,Un)], then take
 #         the qlo / qhi percentiles of those fused endpoints.
 # (2) is WEAKLY narrower than (1) and strictly narrower only when which source
@@ -126,6 +126,32 @@ print(cmp[["Lam", "Gam", "w_intersect", "w_boot", "narrower_by", "frac_empty"]]
       .round(4).to_string(index=False))
 
 # ---------------------------------------------------------------------------
+# Neat summary DataFrame: one row per (Lambda, Gamma), intervals as strings.
+# The space flag in the format reserves a slot for the sign so positive and
+# negative numbers have equal width and the columns line up cleanly.
+# ---------------------------------------------------------------------------
+def iv(lo, hi, empty=False):
+    return "empty" if empty else f"[{lo: .3f}, {hi: .3f}]"
+ 
+summary = pd.DataFrame({
+    "Lambda": res.Lam.map(lambda v: f"{v:g}"),
+    "Gamma": res.Gam.map(lambda v: f"{v:g}"),
+    "ZSB": [iv(r.z_lo, r.z_hi) for r in res.itertuples()],
+    "ZSB CI": [iv(r.zci_lo, r.zci_hi) for r in res.itertuples()],
+    "NIW": [iv(r.n_lo, r.n_hi) for r in res.itertuples()],
+    "NIW CI": [iv(r.nci_lo, r.nci_hi) for r in res.itertuples()],
+    "Fused": [iv(r.f_lo, r.f_hi, bool(r.f_empty)) for r in res.itertuples()],
+    "Fused CI (intersect)": [iv(r.fci_lo, r.fci_hi, r.fci_lo > r.fci_hi + EMPTY_TOL)
+                             for r in res.itertuples()],
+    "Fused CI (min/max)": [iv(r.fb_lo, r.fb_hi, r.fb_lo > r.fb_hi + EMPTY_TOL)
+                           for r in res.itertuples()],
+})
+pd.set_option("display.width", 250, "display.max_columns", None,
+              "display.colheader_justify", "center")
+print(f"\nn = {n}   B = {B}   {int((1-alpha)*100)}% CIs   true tau = {tau:.3f}\n")
+print(summary.to_string(index=False))
+
+# ---------------------------------------------------------------------------
 # Forest-style plot: one x-slot per (Lambda, Gamma) pair; three sources per
 # slot (ZSB, NIW, Fused), each shown as thick identified bar + thin CI whisker
 # ---------------------------------------------------------------------------
@@ -192,7 +218,7 @@ for k, r in res.iterrows():
         ax.plot([xL, xL], [r.fci_lo, r.fci_hi], marker="_", ms=8, ls="none",
                 color="darkgreen", alpha=0.85, zorder=3)
 
-    # (c) bootstrap-the-min/max whisker (not justified): purple dashed, right
+    # (c) bootstrap-the-min/max whisker: purple dashed, right
     if r.fb_lo <= r.fb_hi + EMPTY_TOL:
         xR = xc + DX
         ax.plot([xR, xR], [r.fb_lo, r.fb_hi], color="purple", lw=1.7,
