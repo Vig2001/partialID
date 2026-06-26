@@ -102,12 +102,17 @@ for (Lam, Gam) in param_pairs:
     fb = (np.percentile(Lf, qlo), np.percentile(Uf, qhi))
     frac_empty_boot = float(np.mean(Uf < Lf))   # resamples where bands cross
 
+    # which source BINDS each fused endpoint, counted over the B resamples
+    low_zsb = int(np.sum(Lz >= Ln)); low_niw = B - low_zsb   # max picks lower
+    up_zsb = int(np.sum(Uz <= Un)); up_niw = B - up_zsb      # min picks upper
+
     rows.append(dict(
         Lam=Lam, Gam=Gam,
         z_lo=zpt[0], z_hi=zpt[1], zci_lo=zci[0], zci_hi=zci[1],
         n_lo=npt[0], n_hi=npt[1], nci_lo=nci[0], nci_hi=nci[1],
         f_lo=fpt[0], f_hi=fpt[1], fci_lo=fci[0], fci_hi=fci[1],
         fb_lo=fb[0], fb_hi=fb[1], frac_empty=frac_empty_boot,
+        low_zsb=low_zsb, low_niw=low_niw, up_zsb=up_zsb, up_niw=up_niw,
         f_empty=int(fpt[0] > fpt[1] + EMPTY_TOL),
     ))
 
@@ -150,6 +155,23 @@ pd.set_option("display.width", 250, "display.max_columns", None,
               "display.colheader_justify", "center")
 print(f"\nn = {n}   B = {B}   {int((1-alpha)*100)}% CIs   true tau = {tau:.3f}\n")
 print(summary.to_string(index=False))
+
+# How often each source BINDS each fused endpoint, over the B resamples.
+# Lower endpoint = max(Lz,Ln): ZSB binds when Lz>=Ln.
+# Upper endpoint = min(Uz,Un): ZSB binds when Uz<=Un.
+# A 0/B split = one source always binds (clear margin);
+# a ~50/50 split = a near-tie (the crossing regime).
+# ---------------------------------------------------------------------------
+binding = pd.DataFrame({
+    "Lambda": res.Lam.map(lambda v: f"{v:g}"),
+    "Gamma": res.Gam.map(lambda v: f"{v:g}"),
+    "lower: ZSB binds": res.low_zsb,
+    "lower: NIW binds": res.low_niw,
+    "upper: ZSB binds": res.up_zsb,
+    "upper: NIW binds": res.up_niw,
+})
+print(f"\nBinding counts (out of B = {B} resamples)\n")
+print(binding.to_string(index=False))
 
 # ---------------------------------------------------------------------------
 # Forest-style plot: one x-slot per (Lambda, Gamma) pair; three sources per
