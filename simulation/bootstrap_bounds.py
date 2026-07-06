@@ -159,7 +159,7 @@ plt.show()
 # upper ~ 0.51, so min(Uz,Un) clips resample-by-resample.
 
 print("\n--- forced-crossing demo (Lambda=2.1 for ZSB, Gamma=1.26 for NIW) ---")
-Lam, Gam = 3.5, 1.26
+Lam, Gam = 2.1, 1.26
 Uz = np.empty(B); Un = np.empty(B)
 for b in range(B):
     d = dat.iloc[rng.integers(0, n, n)]
