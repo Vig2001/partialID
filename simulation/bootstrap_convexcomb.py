@@ -218,8 +218,8 @@ def pseudo_true_grid(lam_grid, gam_grid, n=N_TRUE):
 
 # Slang breakdown: cc = convex combination, ic = intersect CIs, bm = bootstrap min/max
 def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
-        lam_grid=LAM_GRID, gam_grid=GAM_GRID, n_true=N_TRUE, seed=SEED,
-        plot=True):
+        lam_grid=LAM_GRID, gam_grid=GAM_GRID, n_true=N_TRUE, seed=SEED, 
+        comp=False, plot=True):
     rng = np.random.default_rng(seed)
     dat = simulate_dgp(n, rng=rng)
     tau = true_tau_S0()
@@ -256,7 +256,7 @@ def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
             ccb = (np.percentile(Lf, qlo), np.percentile(Uf, qhi))
             cc = joint_calibrated_ci(Lf, Uf, alpha)
 
-            if b_full > 0:
+            if b_full > 0 and not comp:
                 zsb_ci = (np.percentile(Lz[:, i], qlo),
                           np.percentile(Uz[:, i], qhi))
                 niw_ci = (np.percentile(Ln[:, j], qlo),
@@ -264,6 +264,14 @@ def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
                 ic = (max(zsb_ci[0], niw_ci[0]), min(zsb_ci[1], niw_ci[1]))
                 bm = (np.percentile(np.maximum(Lz[:, i], Ln[:, j]), qlo),
                       np.percentile(np.minimum(Uz[:, i], Un[:, j]), qhi))
+            elif b_full > 0 and comp:
+                zsb_ci = (np.percentile(LzB[:, i], qlo),
+                          np.percentile(UzB[:, i], qhi))
+                niw_ci = (np.percentile(LnB[:, j], qlo),
+                          np.percentile(UnB[:, j], qhi))
+                ic = (max(zsb_ci[0], niw_ci[0]), min(zsb_ci[1], niw_ci[1]))
+                bm = (np.percentile(np.maximum(LzB[:, i], LnB[:, j]), qlo),
+                      np.percentile(np.minimum(UzB[:, i], UnB[:, j]), qhi))
             else:
                 zsb_ci = niw_ci = ic = bm = (np.nan, np.nan)
 
@@ -393,7 +401,8 @@ def plot_pairs(res, pairs=None, empty_tol=1e-9):
       orange solid   = split convex-comb, joint-calib.   (fold B only!)
     Remember the orange whisker is computed on fold B (smaller n), so it is
     somewhat wider mechanically; the payoff is validity at crossing cells,
-    where the purple whisker under-covers.
+    where the purple whisker under-covers. i.e. there is a width penalty,
+    of root(n / n_B) which is because we have to select the optimal lambda.
 
     pairs: optional list of (Lambda, Gamma) tuples to display, in order.
            Default: all cells if the grid is small, else the diagonal.
