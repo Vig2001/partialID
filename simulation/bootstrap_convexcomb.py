@@ -67,11 +67,11 @@ from point_bounds import (simulate_dgp, true_tau_S0, hajek_extreme,
 
 # ----------------------------- configuration -------------------------------
 SEED     = 7
-N        = 5000
-FRAC_A   = 0.30       # fraction of the sample used to choose (lam_L, lam_U)
-B_A      = 200        # bootstrap resamples on fold A (selection; small is ok)
-B_B      = 800        # bootstrap resamples on fold B (inference)
-B_FULL   = 800        # resamples for the full-data comparison constructions
+N        = 250000
+FRAC_A   = 0.3       # fraction of the sample used to choose (lam_L, lam_U)
+B_A      = 1000        # bootstrap resamples on fold A (selection; small is ok)
+B_B      = 1000        # bootstrap resamples on fold B (inference)
+B_FULL   = 1000        # resamples for the full-data comparison constructions
 ALPHA    = 0.05
 LAM_GRID = np.exp(np.linspace(0, np.log(4), 5))   # ZSB confounding Lambda
 GAM_GRID = np.exp(np.linspace(0, np.log(4), 5))   # NIW selection Gamma
@@ -163,8 +163,8 @@ def boot_endpoints_grid(d, lam_grid, gam_grid, B, rng):
             Ln[b, j], Un[b, j] = niw_from_components(cn, Gam)
     return Lz, Uz, Ln, Un
 
-
-def choose_lambdas(Lz, Uz, Ln, Un, alpha=ALPHA, lam_wgrid=LAM_WGRID):
+# One way to choose lambda - doesn't seem to work properly
+def percentile_loss(Lz, Uz, Ln, Un, alpha=ALPHA, lam_wgrid=LAM_WGRID):
     """One-sided selection of the blend weight for each edge SEPARATELY.
     Upper edge: minimize the reported upper confidence limit.
     Lower edge: maximize the reported lower confidence limit."""
@@ -174,6 +174,36 @@ def choose_lambdas(Lz, Uz, Ln, Un, alpha=ALPHA, lam_wgrid=LAM_WGRID):
     lo = np.array([np.percentile(l * Lz + (1 - l) * Ln, qlo)
                    for l in lam_wgrid])
     return float(lam_wgrid[np.argmax(lo)]), float(lam_wgrid[np.argmin(up)])
+
+# Another way to choose lambda is to minimise mean-squared error
+# There is an analytical form for the error - no grid search required
+# The unbiased a.k.a precision weighting case clearly favours the OS CI (as the OS is more precise)
+# The biased case translates the intervals, it doesn't seem to shrink them.
+# A more informed MSE loss that takes into account the width of the fused set is required
+def mse_loss(Lz, Uz, Ln, Un, alpha=ALPHA, lam_wgrid=LAM_WGRID, unbiased=True):
+    """Selection of the convex combination weight for each edge SEPARATELY.
+    Based on minimising the mean squared error of the estimates of the extrema.
+    This need not choose the tightest value.
+    In the unbiased case we are performing precision weighting."""
+    var_ln, var_un = np.var(Ln, ddof=1), np.var(Un, ddof=1)
+    cov_lnlz, cov_unuz = np.cov(Ln, Lz)[0,1], np.cov(Un, Uz)[0,1]
+    # diff is used as an estimate of the difference in bias
+    diff_lb, diff_ub = Lz - Ln, Uz - Un
+    var_difflb, var_diffub = np.var(diff_lb, ddof=1), np.var(diff_ub, ddof=1)
+    
+    if unbiased:
+        lam_lb = (var_ln - cov_lnlz) / var_difflb
+        lam_ub = (var_un - cov_unuz) / var_diffub
+        return lam_lb, lam_ub
+    else:
+        # To estimate the bias of one of the models we assume (A) the parameter is correct
+        # Then the max the bias could be is the difference between the extrema values
+        # np.ptp gives the range of the array
+        bias_lb = 1
+        bias_ub = 1
+        lam_lb = (var_ln - cov_lnlz + bias_lb * (np.mean(diff_lb))) / (var_difflb + (np.mean(diff_lb)) ** 2)
+        lam_ub = (var_un - cov_unuz + bias_ub * (np.mean(diff_ub))) / (var_diffub + (np.mean(diff_ub)) ** 2)
+        return lam_lb, lam_ub
 
 
 # An alternative method to Bonferroni Correction
@@ -224,11 +254,24 @@ def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
     dat = simulate_dgp(n, rng=rng)
     tau = true_tau_S0()
 
-    # one split, reused across the whole grid
-    perm = rng.permutation(n)
-    nA = int(round(frac_a * n))
-    dA = dat.iloc[perm[:nA]].reset_index(drop=True)
-    dB = dat.iloc[perm[nA:]].reset_index(drop=True)
+    # one split, reused across the whole grid.
+    # STRATIFIED on S: permute the RCT rows and the OS rows separately and
+    # take frac_a of each, so fold A is guaranteed its proportional share of
+    # the scarce trial units (a plain random split can shortchange it badly
+    # when the RCT is only a few % of the sample, making the fold-A NIW
+    # endpoints -- and hence the chosen lambdas -- needlessly noisy).
+    idx_A, idx_B = [], []
+    for s in (0, 1):
+        idx_s = np.flatnonzero(dat["S"].to_numpy() == s)
+        idx_s = rng.permutation(idx_s)
+        n_sA = int(round(frac_a * len(idx_s)))
+        idx_A.append(idx_s[:n_sA])
+        idx_B.append(idx_s[n_sA:])
+    idx_A = np.concatenate(idx_A)
+    idx_B = np.concatenate(idx_B)
+    nA = len(idx_A)
+    dA = dat.iloc[idx_A].reset_index(drop=True)
+    dB = dat.iloc[idx_B].reset_index(drop=True)
 
     true_lo, true_hi = pseudo_true_grid(lam_grid, gam_grid, n=n_true)
     qlo, qhi = 100 * alpha / 2, 100 * (1 - alpha / 2)
@@ -236,7 +279,9 @@ def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
     # all bootstrap work happens once, covering the whole grid
     LzA, UzA, LnA, UnA = boot_endpoints_grid(dA, lam_grid, gam_grid, b_a, rng)
     LzB, UzB, LnB, UnB = boot_endpoints_grid(dB, lam_grid, gam_grid, b_b, rng)
-    if b_full > 0:
+    if b_full > 0 and not comp:
+        # full-data pass only needed for the deployment-faithful comparison;
+        # comp=True reuses the fold-B draws instead (free)
         Lz, Uz, Ln, Un = boot_endpoints_grid(dat, lam_grid, gam_grid,
                                              b_full, rng)
 
@@ -248,32 +293,40 @@ def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
     rows = []
     for i, Lam in enumerate(lam_grid):
         for j, Gam in enumerate(gam_grid):
-            lam_L, lam_U = choose_lambdas(LzA[:, i], UzA[:, i],
-                                          LnA[:, j], UnA[:, j], alpha)
+            # no need to split if we have an analytical form?
+            lam_L, lam_U = mse_loss(Lz[:, i], Uz[:, i],
+                                          Ln[:, j], Un[:, j], unbiased=True)
 
-            Lf = lam_L * LzB[:, i] + (1 - lam_L) * LnB[:, j]
-            Uf = lam_U * UzB[:, i] + (1 - lam_U) * UnB[:, j]
-            ccb = (np.percentile(Lf, qlo), np.percentile(Uf, qhi))
-            cc = joint_calibrated_ci(Lf, Uf, alpha)
+            Lf = lam_L * Lz[:, i] + (1 - lam_L) * Ln[:, j]    # convex combination of the lower bounds from both methods in boot B
+            Uf = lam_U * Uz[:, i] + (1 - lam_U) * Un[:, j]    # convex combination of the upper bounds from both methods in boot B
+            ccb = (np.percentile(Lf, qlo), np.percentile(Uf, qhi)) # take the 2.5th and 97.5th percentile of Lf and Uf (Bonferonni method)
+            # joint calibration disabled for now, to compare the plain
+            # Bonferroni blend against the (properly levelled) intersect-CIs:
+            # cc = joint_calibrated_ci(Lf, Uf, alpha) # allow for correlation between them
+            cc = ccb
+            # NB: cc protects only TWO edges (the blended Lf and Uf), so
+            # alpha/2 per edge is the correct 2-way Bonferroni for 95%.
 
+            # intersect-the-CIs at a genuine 95% for the FUSED set: coverage
+            # needs FOUR one-sided events at once (both sources' lower edges
+            # below their truths, both upper edges above), so Bonferroni
+            # splits alpha over 4 -> alpha/4 = 1.25% per tail per source.
+            # (2.5% tails would only guarantee ~90% for the fused set.)
+            qlo4, qhi4 = 100 * alpha / 4, 100 * (1 - alpha / 4)
             if b_full > 0 and not comp:
-                zsb_ci = (np.percentile(Lz[:, i], qlo),
-                          np.percentile(Uz[:, i], qhi))
-                niw_ci = (np.percentile(Ln[:, j], qlo),
-                          np.percentile(Un[:, j], qhi))
+                zsb_ci = (np.percentile(Lz[:, i], qlo4),
+                          np.percentile(Uz[:, i], qhi4))
+                niw_ci = (np.percentile(Ln[:, j], qlo4),
+                          np.percentile(Un[:, j], qhi4))
                 ic = (max(zsb_ci[0], niw_ci[0]), min(zsb_ci[1], niw_ci[1]))
-                bm = (np.percentile(np.maximum(Lz[:, i], Ln[:, j]), qlo),
-                      np.percentile(np.minimum(Uz[:, i], Un[:, j]), qhi))
-            elif b_full > 0 and comp:
-                zsb_ci = (np.percentile(LzB[:, i], qlo),
-                          np.percentile(UzB[:, i], qhi))
-                niw_ci = (np.percentile(LnB[:, j], qlo),
-                          np.percentile(UnB[:, j], qhi))
+            elif comp:   # fold-B ablation: reuses b_b draws, b_full not needed <- REMOVED B because have analytical form for MSE loss
+                zsb_ci = (np.percentile(Lz[:, i], qlo4),
+                          np.percentile(Uz[:, i], qhi4))
+                niw_ci = (np.percentile(Ln[:, j], qlo4),
+                          np.percentile(Un[:, j], qhi4))
                 ic = (max(zsb_ci[0], niw_ci[0]), min(zsb_ci[1], niw_ci[1]))
-                bm = (np.percentile(np.maximum(LzB[:, i], LnB[:, j]), qlo),
-                      np.percentile(np.minimum(UzB[:, i], UnB[:, j]), qhi))
             else:
-                zsb_ci = niw_ci = ic = bm = (np.nan, np.nan)
+                zsb_ci = niw_ci = ic = (np.nan, np.nan)
 
             Lt, Ut = true_lo[i, j], true_hi[i, j]
             # oracle test/answer - we have an infinite number of datapoints and test compatibility
@@ -281,6 +334,7 @@ def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
             # we can perform a sample point falsification based on f_lo > f_hi
             # this ignores sampling variability and thus is not a falsification test
             # would be interesting to construct to attain a lower bound frontier that has inference statements built in
+            # HYQ etc build a test which assumes transportability, we don't assume perfect transportability
             rows.append(dict(
                 Lam=Lam, Gam=Gam, lam_L=lam_L, lam_U=lam_U,
                 true_lo=Lt, true_hi=Ut, empty_true=int(empty),
@@ -291,18 +345,14 @@ def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
                 zci_lo=zsb_ci[0], zci_hi=zsb_ci[1],
                 nci_lo=niw_ci[0], nci_hi=niw_ci[1],
                 cc_lo=cc[0], cc_hi=cc[1],
-                ccb_lo=ccb[0], ccb_hi=ccb[1],
                 ic_lo=ic[0], ic_hi=ic[1],
-                bm_lo=bm[0], bm_hi=bm[1],
                 cov_cc=int(not empty and cc[0] <= Lt and Ut <= cc[1]),
                 cov_ic=int(not empty and ic[0] <= Lt and Ut <= ic[1]),
-                cov_bm=int(not empty and bm[0] <= Lt and Ut <= bm[1]),
             ))
 
     res = pd.DataFrame(rows)
     res["w_cc"] = res.cc_hi - res.cc_lo
     res["w_ic"] = res.ic_hi - res.ic_lo
-    res["w_bm"] = res.bm_hi - res.bm_lo
     res.attrs["tau"] = tau
 
     pd.set_option("display.width", 240, "display.max_columns", 40,
@@ -319,21 +369,60 @@ def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
     ok = res.empty_true == 0
     print(f"\nnon-empty cells: {ok.sum()}/{len(res)}   "
           f"coverage -- cc: {res.cov_cc[ok].mean():.2f}, "
-          f"ic: {res.cov_ic[ok].mean():.2f}, "
-          f"bm: {res.cov_bm[ok].mean():.2f}")
-    print("NB: cc uses only fold B (smaller n); compare on coverage at "
-          "crossing cells, not raw width, vs full-data ic/bm.")
+          f"ic: {res.cov_ic[ok].mean():.2f}")
+    if comp:
+        print("comp=True: ic computed on the FOLD-B draws (same data as "
+              "cc) -- widths directly comparable; isolates the construction "
+              "effect.")
+    else:
+        print("NB: cc uses only fold B (smaller n); compare on coverage at "
+              "crossing cells, not raw width, vs full-data ic.")
 
     if plot:
         # Focusing on the whisker (forest) plot for now; the heatmap panels
         # are still available -- uncomment to bring them back.
         #_plot_grid(res, lam_grid, gam_grid)
-        plot_pairs(res)
-    return res
+        plot_pairs(res, pairs=[(1.0, 1.0), (2.0, 1.0), (4.0, 2.0), (2.0, 1.41), (4.0, 1.41)])
+    
+    print_summary(res)
+    #return res
+
+def print_summary(res, digits=3):
+    """Compact terminal view of run() output: one row per cell,
+    intervals as strings, coverage as tick marks."""
+    import pandas as pd
+
+    def iv(lo, hi, empty=False):
+        if empty:
+            return "empty"
+        if pd.isna(lo) or pd.isna(hi):
+            return "--"
+        return f"[{lo: .{digits}f},{hi: .{digits}f}]"
+
+    def tick(flag, vacuous):
+        return "." if vacuous else ("Y" if flag else "N")
+
+    out = pd.DataFrame({
+        "Lam":    res.Lam.map(lambda v: f"{v:g}"),
+        "Gam":    res.Gam.map(lambda v: f"{v:g}"),
+        "lam_L":  res.lam_L.map(lambda v: f"{v:.2f}"),
+        "lam_U":  res.lam_U.map(lambda v: f"{v:.2f}"),
+        "truth":  [iv(r.true_lo, r.true_hi, r.empty_true == 1)
+                   for r in res.itertuples()],
+        "cc":     [iv(r.cc_lo, r.cc_hi) for r in res.itertuples()],
+        "ic":     [iv(r.ic_lo, r.ic_hi) for r in res.itertuples()],
+        "cover(cc/ic)": [
+            f"{tick(r.cov_cc, r.empty_true)}/"
+            f"{tick(r.cov_ic, r.empty_true)}"
+            for r in res.itertuples()],
+    })
+    with pd.option_context("display.width", 200,
+                           "display.colheader_justify", "center"):
+        print(out.to_string(index=False))
 
 
 def _plot_grid(res, lam_grid, gam_grid):
-    # draws four heatmpas. THe top left and right illustrate the convex comb weight chosen
+    # draws four heatmpas. The top left and right illustrate the convex comb weight chosen
     # for the lower and upper edge - 1 means trust ZSB while 0 means trust NIW
     # bottom left plot illustrates the width ratio between all methods tried so far
     # bottom right illustrates a status map - showing incompatibility / coverage in truth and for the methods
@@ -360,19 +449,19 @@ def _plot_grid(res, lam_grid, gam_grid):
     axes[1, 0].set_title("width ratio: split convex-comb / intersect-CIs",
                          fontsize=10)
 
-    # categorical panel: 0 empty-true, 1 all cover, 2 bm fails / cc covers,
+    # categorical panel: 0 empty-true, 1 all cover, 2 ic fails / cc covers,
     # 3 cc fails
     # for colouring on the bottom-right status map
     cat = np.ones((nG, nL))
     cat[mat("empty_true") == 1] = 0
-    cat[(mat("cov_bm") == 0) & (mat("cov_cc") == 1)
+    cat[(mat("cov_ic") == 0) & (mat("cov_cc") == 1)
         & (mat("empty_true") == 0)] = 2
     cat[(mat("cov_cc") == 0) & (mat("empty_true") == 0)] = 3
     cmap = ListedColormap(["black", "lightgray", "orange", "crimson"])
     axes[1, 1].imshow(cat, origin="lower", cmap=cmap, vmin=0, vmax=3,
                       aspect="auto")
     axes[1, 1].set_title("black: incompatible | gray: all cover |\n"
-                         "orange: bm fails, cc covers | red: cc fails",
+                         "orange: ic fails, cc covers | red: cc fails",
                          fontsize=9)
 
     for ax in axes.flat:
@@ -395,22 +484,34 @@ def plot_pairs(res, pairs=None, empty_tol=1e-9):
     """Forest-style whisker plot in the drawing convention of
     bootstrap_bounds_pairs.py: one x-slot per (Lambda, Gamma) cell, thick
     identified bar + thin CI whisker per source, and for the FUSED set
-    THREE competing CI whiskers side by side:
-      green solid    = intersect-the-CIs                 (full data)
-      purple dashed  = bootstrap-the-min/max             (full data)
-      orange solid   = split convex-comb, joint-calib.   (fold B only!)
+    TWO competing CI whiskers side by side:
+      green solid    = intersect-the-CIs (alpha/4 tails per source)
+      orange solid   = split convex-comb, Bonferroni     (fold B only!)
     Remember the orange whisker is computed on fold B (smaller n), so it is
-    somewhat wider mechanically; the payoff is validity at crossing cells,
-    where the purple whisker under-covers. i.e. there is a width penalty,
+    somewhat wider mechanically. i.e. there is a width penalty,
     of root(n / n_B) which is because we have to select the optimal lambda.
 
     pairs: optional list of (Lambda, Gamma) tuples to display, in order.
            Default: all cells if the grid is small, else the diagonal.
     """
     tau = res.attrs.get("tau", np.nan)
+
+    # this bit of the code chooses which pairs to display
     if pairs is not None:
-        sel = pd.concat([res[np.isclose(res.Lam, L) & np.isclose(res.Gam, G)]
-                         for (L, G) in pairs], ignore_index=True)
+        # snap each requested pair to the NEAREST grid cell (grid values are
+        # things like exp(log(4)/4) = 1.41421..., so exact matching on
+        # rounded inputs like 1.41 would silently drop pairs)
+        lams, gams = np.sort(res.Lam.unique()), np.sort(res.Gam.unique())
+        picked = []
+        for (L, G) in pairs:
+            Ls = lams[np.argmin(np.abs(lams - L))]
+            Gs = gams[np.argmin(np.abs(gams - G))]
+            if abs(Ls - L) > 1e-9 or abs(Gs - G) > 1e-9:
+                print(f"plot_pairs: ({L:g}, {G:g}) not on the grid -> "
+                      f"snapped to ({Ls:g}, {Gs:g})")
+            picked.append(res[np.isclose(res.Lam, Ls)
+                              & np.isclose(res.Gam, Gs)])
+        sel = pd.concat(picked, ignore_index=True)
     elif len(res) <= 9:
         sel = res.reset_index(drop=True)
     else:
@@ -452,7 +553,6 @@ def plot_pairs(res, pairs=None, empty_tol=1e-9):
         whisker(k - 0.12, r.nci_lo, r.nci_hi, "firebrick")
         bar(k + 0.10, r.f_lo, r.f_hi, "darkgreen")       # fused point bounds
         whisker(k + 0.22, r.ic_lo, r.ic_hi, "darkgreen")             # (1)
-        whisker(k + 0.32, r.bm_lo, r.bm_hi, "purple", ls=(0, (3, 2)))  # (2)
         whisker(k + 0.42, r.cc_lo, r.cc_hi, "darkorange")            # (3)
 
     ax.axhline(tau, ls="--", lw=1.8, color="black", zorder=1)
@@ -462,7 +562,7 @@ def plot_pairs(res, pairs=None, empty_tol=1e-9):
     ax.set_xlim(-0.6, len(sel) - 0.3)
     ax.set_ylabel(r"$E[Y(1)-Y(0)\mid S=0]$")
     ax.set_xlabel("sensitivity-parameter pair")
-    ax.set_title("Fused bounds with three competing bootstrap CIs "
+    ax.set_title("Fused bounds with two competing procedures "
                  "by sensitivity-parameter pair")
 
     color_handles = [
@@ -477,9 +577,7 @@ def plot_pairs(res, pairs=None, empty_tol=1e-9):
         Line2D([0], [0], color="gray", lw=1.7, alpha=0.8,
                label="bootstrap CI"),
         Line2D([0], [0], color="darkgreen", lw=1.7, alpha=0.8,
-               label="fused CI: intersect-CIs"),
-        Line2D([0], [0], color="purple", lw=1.7, ls=(0, (3, 2)), alpha=0.85,
-               label="fused CI: bootstrap min/max"),
+               label="fused CI: intersect-CIs (alpha/4 tails)"),
         Line2D([0], [0], color="darkorange", lw=1.7, alpha=0.85,
                label="fused CI: split convex-comb (fold B)"),
         Line2D([0], [0], color="darkgreen", lw=0, marker=r"$\varnothing$",
@@ -501,7 +599,7 @@ def plot_pairs(res, pairs=None, empty_tol=1e-9):
 # ------------------------- forced-crossing stress test ----------------------
 def forced_crossing_demo(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL,
                          alpha=ALPHA, n_true=N_TRUE, seed=SEED,
-                         Lam=3.5, Gam=1.26):
+                         Lam=2.1, Gam=1.26):
     """Off-grid configuration where the two UPPER bounds nearly tie, so which
     source binds flips resample to resample. This is where bootstrap-the-min
     under-covers; the frozen-lam blend should not."""
@@ -551,4 +649,4 @@ def forced_crossing_demo(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL,
 
 if __name__ == "__main__":
     run()
-    forced_crossing_demo()
+
