@@ -62,12 +62,13 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from matplotlib.lines import Line2D
 
-from point_bounds import (simulate_dgp, true_tau_S0, hajek_extreme,
-                          fit_logit, zsb_bounds, niw_bounds)
+from demo import simulate_dgp, true_tau_S0
+from helpers.optimisers import hajek_extreme, fit_logit, zsb_bounds, niw_bounds
+from plotting.visualisations import plot_pairs
 
 # ----------------------------- configuration -------------------------------
 SEED     = 7
-N        = 250000
+N        = 10000
 FRAC_A   = 0.3       # fraction of the sample used to choose (lam_L, lam_U)
 B_A      = 1000        # bootstrap resamples on fold A (selection; small is ok)
 B_B      = 1000        # bootstrap resamples on fold B (inference)
@@ -180,7 +181,12 @@ def percentile_loss(Lz, Uz, Ln, Un, alpha=ALPHA, lam_wgrid=LAM_WGRID):
 # The unbiased a.k.a precision weighting case clearly favours the OS CI (as the OS is more precise)
 # The biased case translates the intervals, it doesn't seem to shrink them.
 # A more informed MSE loss that takes into account the width of the fused set is required
-def mse_loss(Lz, Uz, Ln, Un, alpha=ALPHA, lam_wgrid=LAM_WGRID, unbiased=True):
+# There is an interesting MSE scenario with the no confounding and/or no transportability case
+# Basically as N increases the variance of these estimates decrease but because both estimataes are biased
+# They essentially become overconfident on the wrong thing
+# In this case one of the sets is invalid
+# Taking an intersection, therefore, is also invalid.
+def mse_loss(Lz, Uz, Ln, Un, npt_arr, alpha=ALPHA, unbiased=True):
     """Selection of the convex combination weight for each edge SEPARATELY.
     Based on minimising the mean squared error of the estimates of the extrema.
     This need not choose the tightest value.
@@ -190,20 +196,22 @@ def mse_loss(Lz, Uz, Ln, Un, alpha=ALPHA, lam_wgrid=LAM_WGRID, unbiased=True):
     # diff is used as an estimate of the difference in bias
     diff_lb, diff_ub = Lz - Ln, Uz - Un
     var_difflb, var_diffub = np.var(diff_lb, ddof=1), np.var(diff_ub, ddof=1)
-    
+
+    # RCT estimate under no transportability bias
+    npt = npt_arr[0][0] # 1st element should be Gamma = 1 which returns a tuple size=2
+    bias_lbn = np.mean(Ln - npt) # taking mean of bootstrap distribution
+    bias_ubn = np.mean(Un - npt)
+    bias_lbz = np.mean(Lz - npt)
+    bias_ubz = np.mean(Uz - npt)
     if unbiased:
         lam_lb = (var_ln - cov_lnlz) / var_difflb
         lam_ub = (var_un - cov_unuz) / var_diffub
         return lam_lb, lam_ub
     else:
-        # To estimate the bias of one of the models we assume (A) the parameter is correct
-        # Then the max the bias could be is the difference between the extrema values
-        # np.ptp gives the range of the array
-        bias_lb = 1
-        bias_ub = 1
-        lam_lb = (var_ln - cov_lnlz + bias_lb * (np.mean(diff_lb))) / (var_difflb + (np.mean(diff_lb)) ** 2)
-        lam_ub = (var_un - cov_unuz + bias_ub * (np.mean(diff_ub))) / (var_diffub + (np.mean(diff_ub)) ** 2)
-        return lam_lb, lam_ub
+
+        lam_lb = (var_ln - cov_lnlz - bias_lbn * (np.mean(diff_lb))) / (var_difflb + (np.mean(diff_lb)) ** 2)
+        lam_ub = (var_un - cov_unuz - bias_ubn * (np.mean(diff_ub))) / (var_diffub + (np.mean(diff_ub)) ** 2)
+        return np.clip(lam_lb, 0.0, 1.0), np.clip(lam_ub, 0.0, 1.0) # need to ensure weight is between 0 and 1
 
 
 # An alternative method to Bonferroni Correction
@@ -295,7 +303,7 @@ def run(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL, alpha=ALPHA,
         for j, Gam in enumerate(gam_grid):
             # no need to split if we have an analytical form?
             lam_L, lam_U = mse_loss(Lz[:, i], Uz[:, i],
-                                          Ln[:, j], Un[:, j], unbiased=True)
+                                          Ln[:, j], Un[:, j], npt, unbiased=False)
 
             Lf = lam_L * Lz[:, i] + (1 - lam_L) * Ln[:, j]    # convex combination of the lower bounds from both methods in boot B
             Uf = lam_U * Uz[:, i] + (1 - lam_U) * Un[:, j]    # convex combination of the upper bounds from both methods in boot B
@@ -420,182 +428,6 @@ def print_summary(res, digits=3):
                            "display.colheader_justify", "center"):
         print(out.to_string(index=False))
 
-
-def _plot_grid(res, lam_grid, gam_grid):
-    # draws four heatmpas. The top left and right illustrate the convex comb weight chosen
-    # for the lower and upper edge - 1 means trust ZSB while 0 means trust NIW
-    # bottom left plot illustrates the width ratio between all methods tried so far
-    # bottom right illustrates a status map - showing incompatibility / coverage in truth and for the methods
-    nL, nG = len(lam_grid), len(gam_grid)
-
-    def mat(col):
-        return res.pivot(index="Gam", columns="Lam", values=col).to_numpy()
-
-    fig, axes = plt.subplots(2, 2, figsize=(11.5, 9.5))
-
-    for ax, col, title, cmap in [
-            (axes[0, 0], "lam_L", r"$\lambda_L$ (lower edge, weight on ZSB)",
-             "viridis"),
-            (axes[0, 1], "lam_U", r"$\lambda_U$ (upper edge, weight on ZSB)",
-             "viridis")]:
-        im = ax.imshow(mat(col), origin="lower", cmap=cmap, vmin=0, vmax=1,
-                       aspect="auto")
-        fig.colorbar(im, ax=ax, shrink=0.85)
-        ax.set_title(title, fontsize=10)
-
-    m = mat("w_cc") / mat("w_ic")
-    im = axes[1, 0].imshow(m, origin="lower", cmap="RdBu_r", aspect="auto")
-    fig.colorbar(im, ax=axes[1, 0], shrink=0.85)
-    axes[1, 0].set_title("width ratio: split convex-comb / intersect-CIs",
-                         fontsize=10)
-
-    # categorical panel: 0 empty-true, 1 all cover, 2 ic fails / cc covers,
-    # 3 cc fails
-    # for colouring on the bottom-right status map
-    cat = np.ones((nG, nL))
-    cat[mat("empty_true") == 1] = 0
-    cat[(mat("cov_ic") == 0) & (mat("cov_cc") == 1)
-        & (mat("empty_true") == 0)] = 2
-    cat[(mat("cov_cc") == 0) & (mat("empty_true") == 0)] = 3
-    cmap = ListedColormap(["black", "lightgray", "orange", "crimson"])
-    axes[1, 1].imshow(cat, origin="lower", cmap=cmap, vmin=0, vmax=3,
-                      aspect="auto")
-    axes[1, 1].set_title("black: incompatible | gray: all cover |\n"
-                         "orange: ic fails, cc covers | red: cc fails",
-                         fontsize=9)
-
-    for ax in axes.flat:
-        ax.set_xticks(range(nL),
-                      [f"{v:.2f}" for v in lam_grid], fontsize=8)
-        ax.set_yticks(range(nG),
-                      [f"{v:.2f}" for v in gam_grid], fontsize=8)
-        ax.set_xlabel(r"$\Lambda$ (OS confounding)", fontsize=9)
-        ax.set_ylabel(r"$\Gamma$ (RCT selection)", fontsize=9)
-        if nL == nG:
-            ax.plot(range(nL), range(nG), color="white", lw=1, ls="--",
-                    alpha=0.7)   # the old diagonal display slice
-
-    fig.tight_layout()
-    plt.show()
-    #fig.savefig("bootstrap_convexcomb_grid.png", dpi=110)
-
-
-def plot_pairs(res, pairs=None, empty_tol=1e-9):
-    """Forest-style whisker plot in the drawing convention of
-    bootstrap_bounds_pairs.py: one x-slot per (Lambda, Gamma) cell, thick
-    identified bar + thin CI whisker per source, and for the FUSED set
-    TWO competing CI whiskers side by side:
-      green solid    = intersect-the-CIs (alpha/4 tails per source)
-      orange solid   = split convex-comb, Bonferroni     (fold B only!)
-    Remember the orange whisker is computed on fold B (smaller n), so it is
-    somewhat wider mechanically. i.e. there is a width penalty,
-    of root(n / n_B) which is because we have to select the optimal lambda.
-
-    pairs: optional list of (Lambda, Gamma) tuples to display, in order.
-           Default: all cells if the grid is small, else the diagonal.
-    """
-    tau = res.attrs.get("tau", np.nan)
-
-    # this bit of the code chooses which pairs to display
-    if pairs is not None:
-        # snap each requested pair to the NEAREST grid cell (grid values are
-        # things like exp(log(4)/4) = 1.41421..., so exact matching on
-        # rounded inputs like 1.41 would silently drop pairs)
-        lams, gams = np.sort(res.Lam.unique()), np.sort(res.Gam.unique())
-        picked = []
-        for (L, G) in pairs:
-            Ls = lams[np.argmin(np.abs(lams - L))]
-            Gs = gams[np.argmin(np.abs(gams - G))]
-            if abs(Ls - L) > 1e-9 or abs(Gs - G) > 1e-9:
-                print(f"plot_pairs: ({L:g}, {G:g}) not on the grid -> "
-                      f"snapped to ({Ls:g}, {Gs:g})")
-            picked.append(res[np.isclose(res.Lam, Ls)
-                              & np.isclose(res.Gam, Gs)])
-        sel = pd.concat(picked, ignore_index=True)
-    elif len(res) <= 9:
-        sel = res.reset_index(drop=True)
-    else:
-        sel = res[np.isclose(res.Lam, res.Gam)].reset_index(drop=True)
-
-    fig, ax = plt.subplots(figsize=(max(9.5, 2.0 * len(sel)), 6.2))
-
-    def whisker(x, lo, hi, color, ls="-"):
-        """Thin CI whisker with caps; skipped if NaN or crossed."""
-        if not (np.isfinite(lo) and np.isfinite(hi)) or lo > hi + empty_tol:
-            return
-        ax.plot([x, x], [lo, hi], color=color, lw=1.7, ls=ls,
-                alpha=0.8, zorder=3)
-        ax.plot([x, x], [lo, hi], marker="_", ms=8, ls="none",
-                color=color, alpha=0.9, zorder=3)
-
-    def bar(x, lo, hi, color):
-        """Thick identified bar; empty sets rendered as the missing gap."""
-
-        # point-based falsification
-        if lo > hi + empty_tol:
-            glo, ghi = hi, lo               # the GAP [hi, lo]
-            ax.plot([x, x], [glo, ghi], color=color, lw=1.2, ls=":",
-                    alpha=0.6, zorder=2)
-            ax.annotate(r"$\varnothing$", (x, 0.5 * (glo + ghi)),
-                        color=color, fontsize=13, ha="center", va="center",
-                        zorder=6, fontweight="bold")
-            return
-        lo, hi = min(lo, hi), max(lo, hi)   # clean ULP crossings
-        ax.plot([x, x], [lo, hi], color=color, lw=5.5, alpha=0.45,
-                solid_capstyle="butt", zorder=3)
-        ax.plot([x, x], [lo, hi], marker="o", ms=5, ls="none",
-                color=color, zorder=4)
-
-    for k, r in sel.iterrows():
-        bar(k - 0.30, r.z_lo, r.z_hi, "steelblue")       # ZSB
-        whisker(k - 0.30, r.zci_lo, r.zci_hi, "steelblue")
-        bar(k - 0.12, r.n_lo, r.n_hi, "firebrick")       # NIW
-        whisker(k - 0.12, r.nci_lo, r.nci_hi, "firebrick")
-        bar(k + 0.10, r.f_lo, r.f_hi, "darkgreen")       # fused point bounds
-        whisker(k + 0.22, r.ic_lo, r.ic_hi, "darkgreen")             # (1)
-        whisker(k + 0.42, r.cc_lo, r.cc_hi, "darkorange")            # (3)
-
-    ax.axhline(tau, ls="--", lw=1.8, color="black", zorder=1)
-    ax.set_xticks(range(len(sel)))
-    ax.set_xticklabels([f"$\\Lambda$={L:g}\n$\\Gamma$={G:g}"
-                        for L, G in zip(sel.Lam, sel.Gam)])
-    ax.set_xlim(-0.6, len(sel) - 0.3)
-    ax.set_ylabel(r"$E[Y(1)-Y(0)\mid S=0]$")
-    ax.set_xlabel("sensitivity-parameter pair")
-    ax.set_title("Fused bounds with two competing procedures "
-                 "by sensitivity-parameter pair")
-
-    color_handles = [
-        Line2D([0], [0], color="steelblue", lw=6, alpha=0.5, label="ZSB"),
-        Line2D([0], [0], color="firebrick", lw=6, alpha=0.5, label="NIW"),
-        Line2D([0], [0], color="darkgreen", lw=5.5, alpha=0.45,
-               label="Fused point bounds"),
-    ]
-    style_handles = [
-        Line2D([0], [0], color="gray", lw=5.5, alpha=0.45,
-               label="identified bounds"),
-        Line2D([0], [0], color="gray", lw=1.7, alpha=0.8,
-               label="bootstrap CI"),
-        Line2D([0], [0], color="darkgreen", lw=1.7, alpha=0.8,
-               label="fused CI: intersect-CIs (alpha/4 tails)"),
-        Line2D([0], [0], color="darkorange", lw=1.7, alpha=0.85,
-               label="fused CI: split convex-comb (fold B)"),
-        Line2D([0], [0], color="darkgreen", lw=0, marker=r"$\varnothing$",
-               ms=11, label="fused point bounds empty (pair falsified)"),
-        Line2D([0], [0], color="black", lw=1.8, ls="--",
-               label=r"true $\tau_{S=0}$"),
-    ]
-    leg1 = ax.legend(handles=color_handles, loc="upper left",
-                     frameon=False, fontsize=9, title="source")
-    ax.add_artist(leg1)
-    ax.legend(handles=style_handles, loc="lower left", frameon=False,
-              fontsize=8.5)
-    fig.tight_layout()
-    plt.show()
-    #fig.savefig("bootstrap_convexcomb_pairs.png", dpi=120)
-    return fig
-
-
 # ------------------------- forced-crossing stress test ----------------------
 def forced_crossing_demo(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL,
                          alpha=ALPHA, n_true=N_TRUE, seed=SEED,
@@ -645,7 +477,6 @@ def forced_crossing_demo(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL,
                       ("split convex-comb      ", cc_upper)]:
         flag = "covers" if val >= true_upper else "FAILS to cover"
         print(f"fused UPPER limit, {name}: {val:.4f}  ({flag} the edge)")
-
 
 if __name__ == "__main__":
     run()

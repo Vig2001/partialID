@@ -23,12 +23,12 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from scipy.stats import gaussian_kde
 
-from point_bounds import simulate_dgp, zsb_bounds, niw_bounds
+from demo import simulate_dgp, zsb_bounds, niw_bounds
 
 rng = np.random.default_rng(7)
 
 # ---- config ---------------------------------------------------------------
-n = 5_000
+n = 10000
 B = 1000
 alpha = 0.05
 qlo = 100 * alpha / 2          # lower percentile (2.5)
@@ -63,7 +63,6 @@ param_diff = {
     (1.5, 1.5),
     (2.0, 1.5),
     (3.0, 2.0),
-
 }
 
 ncols = 2
