@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from optimisers import zsb_bounds, niw_bounds
+from .optimisers import zsb_bounds, niw_bounds
 
 # boot_ci1
 def bootstrap_endpoints(dat, n, g, B, rng):
@@ -24,3 +24,14 @@ def bootstrap_pair(dat, n, Lam, Gam, B, rng):
         Lz[b], Uz[b] = zsb_bounds(d, Lambda=Lam)
         Ln[b], Un[b] = niw_bounds(d, Gamma=Gam)
     return Lz, Uz, Ln, Un
+
+# cc_validity
+def horowitz_manski_ci(boot_lower, boot_upper, est_lower, est_upper, alpha=0.05):
+    """
+    Constructs the Horowitz & Manski (2000) confidence interval for the identified set.
+    """
+    dist_lower = est_lower - boot_lower
+    dist_upper = boot_upper - est_upper
+    max_dist = np.maximum(dist_lower, dist_upper)
+    c = max(0.0, float(np.percentile(max_dist, 100 * (1 - alpha))))
+    return est_lower - c, est_upper + c, c

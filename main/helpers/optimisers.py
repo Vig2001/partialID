@@ -1,6 +1,12 @@
 import numpy as np
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
+import numpy as np
+import pandas as pd
+from .simulation1 import simulate_dgp
+
+rng = np.random.default_rng(7)
+
 
 # ----------------------------------------------------------------------------
 # Generic extremizer for Hajek ratios under box-constrained multipliers
@@ -122,8 +128,89 @@ def niw_bounds(dat, Gamma, p_trt=0.5, trim=0.01):
 # ----------------------------------------------------------------------------
 # Fusion: intersect the two identification sets
 # ----------------------------------------------------------------------------
-
 def fuse_bounds(b_zsb, b_niw):
     lo = max(b_zsb[0], b_niw[0])
     hi = min(b_zsb[1], b_niw[1])
     return lo, hi, lo > hi   # (lower, upper, empty?)
+
+
+# Nuisance function estimation
+def fit_zsb_components(dat, trim=0.01):
+    """Fit the OS nuisances once; return the pieces the ZSB Hajek
+    extremization needs. Mirrors point_bounds.zsb_bounds exactly."""
+    os_ = dat[dat["S"] == 0]
+    X = os_[["X1", "X2"]].to_numpy()
+    ehat = fit_logit(X, os_["T"].to_numpy()).predict_proba(X)[:, 1]
+    ehat = np.clip(ehat, trim, 1 - trim)
+    i1 = os_["T"].to_numpy() == 1
+    y = os_["Y"].to_numpy().astype(float)
+    return dict(y1=y[i1], a1=(1 - ehat[i1]) / ehat[i1],
+                y0=y[~i1], a0=ehat[~i1] / (1 - ehat[~i1]))
+
+
+def zsb_from_components(c, Lam):
+    ones1 = np.ones(len(c["y1"]))
+    ones0 = np.ones(len(c["y0"]))
+    mu1_lo = hajek_extreme(c["y1"], c["a1"], ones1, 1 / Lam, Lam, False)
+    mu1_hi = hajek_extreme(c["y1"], c["a1"], ones1, 1 / Lam, Lam, True)
+    mu0_lo = hajek_extreme(c["y0"], c["a0"], ones0, 1 / Lam, Lam, False)
+    mu0_hi = hajek_extreme(c["y0"], c["a0"], ones0, 1 / Lam, Lam, True)
+    return mu1_lo - mu0_hi, mu1_hi - mu0_lo
+
+
+def fit_niw_components(dat, p_trt=0.5, trim=0.01):
+    """Fit the transport nuisances once; return the NIW pseudo-outcome and
+    odds weights. Mirrors point_bounds.niw_bounds exactly."""
+    X_all = dat[["X1", "X2"]].to_numpy()
+    pi_hat = fit_logit(X_all, dat["S"].to_numpy()).predict_proba(X_all)[:, 1]
+    pi_hat = np.clip(pi_hat, trim, 1 - trim)
+    rct = dat["S"].to_numpy() == 1
+    tr = dat[rct]
+    Xtr = tr[["X1", "X2"]].to_numpy()
+    Ttr = tr["T"].to_numpy()
+    Ytr = tr["Y"].to_numpy().astype(float)
+    m1x = fit_logit(Xtr[Ttr == 1], Ytr[Ttr == 1]).predict_proba(Xtr)[:, 1]
+    m0x = fit_logit(Xtr[Ttr == 0], Ytr[Ttr == 0]).predict_proba(Xtr)[:, 1]
+    psi = (m1x - m0x) + np.where(Ttr == 1,
+                                 (Ytr - m1x) / p_trt,
+                                 -(Ytr - m0x) / (1 - p_trt))
+    return dict(psi=psi, a=((1 - pi_hat) / pi_hat)[rct])
+
+
+def niw_from_components(c, Gam):
+    zeros = np.zeros(len(c["psi"]))
+    return (hajek_extreme(c["psi"], c["a"], zeros, 1 / Gam, Gam, False),
+            hajek_extreme(c["psi"], c["a"], zeros, 1 / Gam, Gam, True))
+
+
+def fit_components_ok(d, rng, max_tries=50):
+    """Draw bootstrap resamples until both nuisance fits succeed. A small
+    fold / small RCT can leave a trial arm with single-class Y, which
+    breaks the logistic fit; redrawing is the standard pragmatic fix."""
+    n = len(d)
+    for _ in range(max_tries):
+        db = d.iloc[rng.integers(0, n, n)]
+        try:
+            return fit_zsb_components(db), fit_niw_components(db)
+        except ValueError:
+            continue
+    raise RuntimeError("too many degenerate bootstrap resamples; "
+                       "increase n or the fold size")
+
+# We get the true upper and lower bounds by finding calculating the large sample estimates
+# The reason for this is because it doesn't seem intuitive to find the true ID set using simulation
+def pseudo_true_grid(lam_grid, gam_grid, n=400_000, seed=rng):
+    """Population (pseudo-true) fused endpoints on the grid -- the
+    set-coverage target. One very large draw, nuisances fit once."""
+
+    dbig = simulate_dgp(n, rng=np.random.default_rng(seed))
+
+    cz, cn = fit_zsb_components(dbig), fit_niw_components(dbig)
+
+    z = np.array([zsb_from_components(cz, L) for L in lam_grid])
+    nw = np.array([niw_from_components(cn, G) for G in gam_grid])
+
+    true_lo = np.maximum.outer(z[:, 0], nw[:, 0])   # maximum of LBs -> size: (nL, nG)
+    true_hi = np.minimum.outer(z[:, 1], nw[:, 1])   # minimum of UBs
+
+    return true_lo, true_hi

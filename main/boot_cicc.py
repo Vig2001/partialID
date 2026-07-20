@@ -63,7 +63,9 @@ from matplotlib.colors import ListedColormap
 from matplotlib.lines import Line2D
 
 from demo import simulate_dgp, true_tau_S0
-from helpers.optimisers import hajek_extreme, fit_logit, zsb_bounds, niw_bounds
+from helpers.optimisers import (hajek_extreme, fit_logit, zsb_bounds, niw_bounds,
+                                fit_zsb_components, fit_niw_components, fit_components_ok,
+                                zsb_from_components, niw_from_components, pseudo_true_grid)
 from plotting.visualisations import plot_pairs
 
 # ----------------------------- configuration -------------------------------
@@ -80,69 +82,6 @@ LAM_WGRID = np.linspace(0.0, 1.0, 21)             # convex combination lambda
 N_TRUE   = 400_000    # draw size for pseudo-true (population) bounds
 
 
-# ------------------- nuisance fitting, done once per resample ---------------
-def fit_zsb_components(dat, trim=0.01):
-    """Fit the OS nuisances once; return the pieces the ZSB Hajek
-    extremization needs. Mirrors point_bounds.zsb_bounds exactly."""
-    os_ = dat[dat["S"] == 0]
-    X = os_[["X1", "X2"]].to_numpy()
-    ehat = fit_logit(X, os_["T"].to_numpy()).predict_proba(X)[:, 1]
-    ehat = np.clip(ehat, trim, 1 - trim)
-    i1 = os_["T"].to_numpy() == 1
-    y = os_["Y"].to_numpy().astype(float)
-    return dict(y1=y[i1], a1=(1 - ehat[i1]) / ehat[i1],
-                y0=y[~i1], a0=ehat[~i1] / (1 - ehat[~i1]))
-
-
-def zsb_from_components(c, Lam):
-    ones1 = np.ones(len(c["y1"]))
-    ones0 = np.ones(len(c["y0"]))
-    mu1_lo = hajek_extreme(c["y1"], c["a1"], ones1, 1 / Lam, Lam, False)
-    mu1_hi = hajek_extreme(c["y1"], c["a1"], ones1, 1 / Lam, Lam, True)
-    mu0_lo = hajek_extreme(c["y0"], c["a0"], ones0, 1 / Lam, Lam, False)
-    mu0_hi = hajek_extreme(c["y0"], c["a0"], ones0, 1 / Lam, Lam, True)
-    return mu1_lo - mu0_hi, mu1_hi - mu0_lo
-
-
-def fit_niw_components(dat, p_trt=0.5, trim=0.01):
-    """Fit the transport nuisances once; return the NIW pseudo-outcome and
-    odds weights. Mirrors point_bounds.niw_bounds exactly."""
-    X_all = dat[["X1", "X2"]].to_numpy()
-    pi_hat = fit_logit(X_all, dat["S"].to_numpy()).predict_proba(X_all)[:, 1]
-    pi_hat = np.clip(pi_hat, trim, 1 - trim)
-    rct = dat["S"].to_numpy() == 1
-    tr = dat[rct]
-    Xtr = tr[["X1", "X2"]].to_numpy()
-    Ttr = tr["T"].to_numpy()
-    Ytr = tr["Y"].to_numpy().astype(float)
-    m1x = fit_logit(Xtr[Ttr == 1], Ytr[Ttr == 1]).predict_proba(Xtr)[:, 1]
-    m0x = fit_logit(Xtr[Ttr == 0], Ytr[Ttr == 0]).predict_proba(Xtr)[:, 1]
-    psi = (m1x - m0x) + np.where(Ttr == 1,
-                                 (Ytr - m1x) / p_trt,
-                                 -(Ytr - m0x) / (1 - p_trt))
-    return dict(psi=psi, a=((1 - pi_hat) / pi_hat)[rct])
-
-
-def niw_from_components(c, Gam):
-    zeros = np.zeros(len(c["psi"]))
-    return (hajek_extreme(c["psi"], c["a"], zeros, 1 / Gam, Gam, False),
-            hajek_extreme(c["psi"], c["a"], zeros, 1 / Gam, Gam, True))
-
-
-def _fit_components_ok(d, rng, max_tries=50):
-    """Draw bootstrap resamples until both nuisance fits succeed. A small
-    fold / small RCT can leave a trial arm with single-class Y, which
-    breaks the logistic fit; redrawing is the standard pragmatic fix."""
-    n = len(d)
-    for _ in range(max_tries):
-        db = d.iloc[rng.integers(0, n, n)]
-        try:
-            return fit_zsb_components(db), fit_niw_components(db)
-        except ValueError:
-            continue
-    raise RuntimeError("too many degenerate bootstrap resamples; "
-                       "increase n or the fold size")
-
 
 # ------------------------------- bootstrap ----------------------------------
 def boot_endpoints_grid(d, lam_grid, gam_grid, B, rng):
@@ -157,7 +96,7 @@ def boot_endpoints_grid(d, lam_grid, gam_grid, B, rng):
     Lz = np.empty((B, nL)); Uz = np.empty((B, nL))
     Ln = np.empty((B, nG)); Un = np.empty((B, nG))
     for b in range(B):
-        cz, cn = _fit_components_ok(d, rng)
+        cz, cn = fit_components_ok(d, rng)
         for i, Lam in enumerate(lam_grid):
             Lz[b, i], Uz[b, i] = zsb_from_components(cz, Lam)
         for j, Gam in enumerate(gam_grid):
@@ -237,19 +176,6 @@ def joint_calibrated_ci(Lf, Uf, alpha=ALPHA, t_max=0.25, n_t=200):
         else:
             break
     return best_lo, best_hi
-
-# Psuedo truths because we can't specify a true upper bound and lower bound using a simulation
-# Instead we get the estimates under an infinite data scenario (assuming asymptotic unbiasedness)
-def pseudo_true_grid(lam_grid, gam_grid, n=N_TRUE):
-    """Population (pseudo-true) fused endpoints on the grid -- the
-    set-coverage target. One very large draw, nuisances fit once."""
-    d = simulate_dgp(n, rng=np.random.default_rng(1))
-    cz, cn = fit_zsb_components(d), fit_niw_components(d)
-    z = np.array([zsb_from_components(cz, L) for L in lam_grid])
-    nw = np.array([niw_from_components(cn, G) for G in gam_grid])
-    true_lo = np.maximum.outer(z[:, 0], nw[:, 0])   # maximum of LBs -> size: (nL, nG)
-    true_hi = np.minimum.outer(z[:, 1], nw[:, 1])   # minimum of UBs 
-    return true_lo, true_hi
 
 
 # ------------------------------ main analysis -------------------------------
@@ -446,7 +372,7 @@ def forced_crossing_demo(n=N, frac_a=FRAC_A, b_a=B_A, b_b=B_B, b_full=B_FULL,
     def upper_draws(d, B):
         Uz = np.empty(B); Un = np.empty(B)
         for b in range(B):
-            cz, cn = _fit_components_ok(d, rng)
+            cz, cn = fit_components_ok(d, rng)
             Uz[b] = zsb_from_components(cz, Lam)[1]
             Un[b] = niw_from_components(cn, Gam)[1]
         return Uz, Un
