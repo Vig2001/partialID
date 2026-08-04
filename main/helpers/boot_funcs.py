@@ -26,7 +26,7 @@ def bootstrap_pair(dat, n, Lam, Gam, B, rng):
     return Lz, Uz, Ln, Un
 
 # cc_validity
-def horowitz_manski_ci(boot_lower, boot_upper, est_lower, est_upper, alpha=0.05):
+def horowitz_manski_ci_max(boot_lower, boot_upper, est_lower, est_upper, alpha=0.05):
     """
     Constructs the Horowitz & Manski (2000) confidence interval for the identified set.
     """
@@ -34,4 +34,38 @@ def horowitz_manski_ci(boot_lower, boot_upper, est_lower, est_upper, alpha=0.05)
     dist_upper = boot_upper - est_upper
     max_dist = np.maximum(dist_lower, dist_upper)
     c = max(0.0, float(np.percentile(max_dist, 100 * (1 - alpha))))
+    return est_lower - c, est_upper + c, c
+
+def horowitz_manski_ci(boot_lower, boot_upper, est_lower, est_upper, alpha=0.05,
+                      tol=1e-6, max_iter=100):
+    dist_lower = est_lower - boot_lower
+    dist_upper = boot_upper - est_upper
+    target = 1.0 - alpha
+
+    # empirical probability that both distances <= c
+    def p(c):
+        return np.mean((dist_lower <= c) & (dist_upper <= c))
+
+    # bracket search on the range of max(dist_lower, dist_upper)
+    max_dist = np.maximum(dist_lower, dist_upper)
+    low = float(np.min(max_dist))
+    high = float(np.max(max_dist))
+
+    # trivial edge cases
+    if p(low) >= target:
+        c = low
+    elif p(high) < target:
+        c = high
+    else:
+        # bisection to find smallest c with p(c) >= target
+        for _ in range(max_iter):
+            mid = 0.5 * (low + high)
+            if p(mid) < target:
+                low = mid
+            else:
+                high = mid
+            if high - low < tol:
+                break
+        c = high
+
     return est_lower - c, est_upper + c, c

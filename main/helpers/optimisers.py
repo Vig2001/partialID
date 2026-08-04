@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model import LogisticRegression, LinearRegression
 import numpy as np
 import pandas as pd
 from .simulation1 import simulate_dgp
@@ -169,11 +169,24 @@ def fit_niw_components(dat, p_trt=0.5, trim=0.01):
     Xtr = tr[["X1", "X2"]].to_numpy()
     Ttr = tr["T"].to_numpy()
     Ytr = tr["Y"].to_numpy().astype(float)
-    m1x = fit_logit(Xtr[Ttr == 1], Ytr[Ttr == 1]).predict_proba(Xtr)[:, 1]
-    m0x = fit_logit(Xtr[Ttr == 0], Ytr[Ttr == 0]).predict_proba(Xtr)[:, 1]
+# Auto-detect if outcome is continuous (if not exclusively 0s and 1s)
+    is_continuous = not np.all(np.isin(Ytr, [0, 1]))
+    
+    if is_continuous:
+        # Use Ordinary Least Squares for continuous Y
+        m1 = LinearRegression().fit(Xtr[Ttr == 1], Ytr[Ttr == 1])
+        m0 = LinearRegression().fit(Xtr[Ttr == 0], Ytr[Ttr == 0])
+        m1x = m1.predict(Xtr)
+        m0x = m0.predict(Xtr)
+    else:
+        # Use Logistic Regression for binary Y
+        m1x = fit_logit(Xtr[Ttr == 1], Ytr[Ttr == 1]).predict_proba(Xtr)[:, 1]
+        m0x = fit_logit(Xtr[Ttr == 0], Ytr[Ttr == 0]).predict_proba(Xtr)[:, 1]
+        
     psi = (m1x - m0x) + np.where(Ttr == 1,
                                  (Ytr - m1x) / p_trt,
                                  -(Ytr - m0x) / (1 - p_trt))
+    
     return dict(psi=psi, a=((1 - pi_hat) / pi_hat)[rct])
 
 

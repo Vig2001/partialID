@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from scipy.stats import gaussian_kde
 
-from demo import simulate_dgp, zsb_bounds, niw_bounds
+from main.initial_demo import simulate_dgp, zsb_bounds, niw_bounds
 
 rng = np.random.default_rng(7)
 

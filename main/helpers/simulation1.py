@@ -13,11 +13,11 @@ rng = np.random.default_rng(7)
 #          and affects Y everywhere                          (confounding)
 # S      : 1 = RCT, 0 = observational study
 # T      : binary treatment (randomized at 1/2 in the RCT)
-# Y      : binary outcome
+# Y      : binary outcome (or continuous if cont=True)
 #
 # True sensitivity magnitudes implied by the DGP (for calibration):
-#   confounding:  Lambda_true ~ exp(|gamma_c|)
-#   selection:    Gamma_true  ~ exp(|gamma_s|)
+#   confounding:  Lambda_true ~ exp(|gamma_c|) <- ABSOLUTE VALUE
+#   selection:    Gamma_true  ~ exp(|gamma_s|) <- ABSOLUTE VALUE
 
 def expit(z):
     return 1.0 / (1.0 + np.exp(-z))
@@ -34,6 +34,8 @@ def simulate_dgp(n,
                  delta_c=1.2,    # U_c -> outcome
                  tau0=0.8,       # baseline treatment effect (log-odds)
                  tau_m=1.4,      # effect modification by U_m
+                 cont=True,     # Toggle for continuous outcome
+                 sigma_y=1.0,    # Noise standard deviation if continuous
                  rng=rng):
     X1 = rng.normal(size=n)
     X2 = rng.normal(size=n)
@@ -50,20 +52,44 @@ def simulate_dgp(n,
                       expit(0.3 * X1 - 0.3 * X2 + gamma_c * (U_c - 0.5)))
     T = rng.binomial(1, e_true)
 
-    # potential outcomes (binary), with U_m as an effect modifier
+    # Base linear predictor
     lin0 = -0.4 + 0.4 * X1 - 0.2 * X2 + delta_c * (U_c - 0.5)
-    p0 = expit(lin0)
-    p1 = expit(lin0 + tau0 + tau_m * U_m)
-    Y0 = rng.binomial(1, p0)
-    Y1 = rng.binomial(1, p1)
-    Y = np.where(T == 1, Y1, Y0)
 
-    return pd.DataFrame(dict(X1=X1, X2=X2, U_m=U_m, U_c=U_c, S=S, T=T,
-                             Y=Y, Y0=Y0, Y1=Y1, p0=p0, p1=p1))
+    if cont:
+        # --------------------------------------------------------------------
+        # CONTINUOUS OUTCOME
+        # --------------------------------------------------------------------
+        mu0 = lin0
+        mu1 = lin0 + tau0 + tau_m * U_m
+        Y0 = rng.normal(mu0, sigma_y)
+        Y1 = rng.normal(mu1, sigma_y)
+        Y = np.where(T == 1, Y1, Y0)
+
+        return pd.DataFrame(dict(X1=X1, X2=X2, U_m=U_m, U_c=U_c, S=S, T=T,
+                                 Y=Y, Y0=Y0, Y1=Y1, mu0=mu0, mu1=mu1))
+    
+    else:
+        # --------------------------------------------------------------------
+        # BINARY OUTCOME
+        # --------------------------------------------------------------------
+        p0 = expit(lin0)
+        p1 = expit(lin0 + tau0 + tau_m * U_m)
+        Y0 = rng.binomial(1, p0)
+        Y1 = rng.binomial(1, p1)
+        Y = np.where(T == 1, Y1, Y0)
+
+        return pd.DataFrame(dict(X1=X1, X2=X2, U_m=U_m, U_c=U_c, S=S, T=T,
+                                 Y=Y, Y0=Y0, Y1=Y1, p0=p0, p1=p1))
 
 
 def true_tau_S0(n=2_000_000, **kw):
     """True target estimand E[Y(1)-Y(0) | S=0], by Monte Carlo."""
     d = simulate_dgp(n, rng=np.random.default_rng(1), **kw)
     s0 = d["S"] == 0
-    return float((d.loc[s0, "p1"] - d.loc[s0, "p0"]).mean())
+    
+    # Automatically detect if the generated dataframe has continuous 'mu' columns 
+    # or binary 'p' columns and calculate the mean difference accordingly
+    if "mu1" in d.columns:
+        return float((d.loc[s0, "mu1"] - d.loc[s0, "mu0"]).mean())
+    else:
+        return float((d.loc[s0, "p1"] - d.loc[s0, "p0"]).mean())
