@@ -70,6 +70,6 @@ lower_convex, upper_convex = compute_ci(L_convex, U_convex, alpha)
 width_intersection = upper_intersection - lower_intersection
 width_convex = upper_convex - lower_convex
 
-print(f"Intersection CI: [{lower_intersection:.3f}, {upper_intersection:.3f}], Width: {width_intersection:.3f}")
+print(f"Ideal Case: [{lower_intersection:.3f}, {upper_intersection:.3f}], Width: {width_intersection:.3f}")
 print(f"Best convex weights: w1={best_w1:.2f}, w2={best_w2:.2f}")
 print(f"Convex Combination CI: [{lower_convex:.3f}, {upper_convex:.3f}], Width: {width_convex:.3f}")
