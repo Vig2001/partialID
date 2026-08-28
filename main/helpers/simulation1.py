@@ -34,7 +34,7 @@ def simulate_dgp(n,
                  delta_c=1.2,    # U_c -> outcome
                  tau0=0.8,       # baseline treatment effect (log-odds)
                  tau_m=1.4,      # effect modification by U_m
-                 cont=True,     # Toggle for continuous outcome
+                 cont=True,      # Toggle for continuous outcome
                  sigma_y=1.0,    # Noise standard deviation if continuous
                  rng=rng):
     X1 = rng.normal(size=n)
@@ -63,6 +63,7 @@ def simulate_dgp(n,
         mu1 = lin0 + tau0 + tau_m * U_m
         Y0 = rng.normal(mu0, sigma_y)
         Y1 = rng.normal(mu1, sigma_y)
+        # consistency assumption
         Y = np.where(T == 1, Y1, Y0)
 
         return pd.DataFrame(dict(X1=X1, X2=X2, U_m=U_m, U_c=U_c, S=S, T=T,

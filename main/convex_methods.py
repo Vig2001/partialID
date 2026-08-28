@@ -1,18 +1,12 @@
 # =========================================================================
-# Coverage analysis to understand whether every lambda yields a valid
-# confidence interval
+# Coverage analysis to understand whether every omega yields a 
+# finite confidence interval at level 1-alpha.
 #
-# Step 1:
 # Fix weight using grid
 # Perform bootstrap and get CI for fused ID set (Horowitz, Manski 2003)
-# These confidence intervals should be valid <- check it
+# These confidence intervals should be valid
 # Repeat for all weights
-# Choose weight that provides the narrowest set
-#
-# Step 2:
-# Choose weight data-adaptively (some loss function)
-# Alter bootstrap procedure to ensure validity holds (sample splitting)
-# Check validity for this procedure
+# Choose weight that provides the narrowest set using a grid search
 # =========================================================================
 
 import numpy as np
@@ -52,14 +46,14 @@ SEED     = 7
 N        = 10000
 M_MC     = 100         # Number of Monte Carlo iterations (datasets) <- small for speed
 ALPHA    = 0.05
-FRAC_A   = 0.3         # fraction of the sample used to choose (lam_L, lam_U)
+FRAC_A   = 0.3         # fraction of the sample used to choose (omega_L, omega_U)
 B_A      = 1000        # bootstrap resamples on fold A (selection; small is ok)
 B_B      = 1000        # bootstrap resamples on fold B (inference)
 B_FULL   = 1000        # resamples for the full-data comparison constructions
 LAM_GRID = np.exp(np.linspace(0, np.log(4), 5))   # ZSB confounding Lambda
 GAM_GRID = np.exp(np.linspace(0, np.log(4), 5))   # NIW selection Gamma
-W_GRID   = np.linspace(0.0, 1.0, 21)              # lam (weight on ZSB)
-N_TRUE   = 1_000_000                               # size for pseudo-true bounds
+W_GRID   = np.linspace(0.0, 1.0, 21)              # omega (mixture weight) grid
+N_TRUE   = 1_000_000                              # size for pseudo-true bounds
 
 # Plan:
 # For loop through sensitivity parameter pairings
