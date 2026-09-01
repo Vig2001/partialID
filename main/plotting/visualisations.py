@@ -319,4 +319,32 @@ def plot_pairs(res, pairs=None, empty_tol=1e-9, save=False):
     if save:
         fig.savefig("bootstrap_convexcomb_pairs.png", dpi=120)
     return fig
-        
+
+def plot_hist_with_gaussian(ax, data_a, data_b, title, xlabel, labels, colors):
+    ax.hist(data_a, bins=30, alpha=0.65, label=labels[0], color=colors[0], density=True)
+    ax.hist(data_b, bins=30, alpha=0.65, label=labels[1], color=colors[1], density=True)
+
+    all_data = np.concatenate([data_a, data_b])
+    x_grid = np.linspace(all_data.min(), all_data.max(), 300)
+    for data, label, color in [(data_a, labels[0], colors[0]), (data_b, labels[1], colors[1])]:
+        mu = np.mean(data)
+        sigma = np.std(data, ddof=1)
+        ax.plot(x_grid, norm.pdf(x_grid, loc=mu, scale=sigma), color=color, linewidth=2,
+                label=f'{label} Gaussian fit')
+
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel('Density')
+    ax.legend()
+
+def plot_qq(ax, data_a, data_b, title, labels, colors):
+    for data, label, color in [(data_a, labels[0], colors[0]), (data_b, labels[1], colors[1])]:
+        (theoretical_q, ordered_vals), (slope, intercept, r) = probplot(data, dist='norm')
+        ax.scatter(theoretical_q, ordered_vals, s=14, alpha=0.55, color=color, label=f'{label} QQ points')
+        line_x = np.array([theoretical_q.min(), theoretical_q.max()])
+        ax.plot(line_x, slope * line_x + intercept, color=color, linewidth=2, label=f'{label} fit')
+
+    ax.set_title(title)
+    ax.set_xlabel('Theoretical Quantiles')
+    ax.set_ylabel('Sample Quantiles')
+    ax.legend()

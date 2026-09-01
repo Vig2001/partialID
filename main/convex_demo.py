@@ -431,6 +431,9 @@ print(f"Note: the estimated bounds are shifted by a fixed scalar of {BOUND_SHIFT
 with pd.option_context("display.max_rows", None, "display.max_columns", None, "display.width", 120, "display.float_format", "{:.3f}".format):
     print(coverage_summary.to_string(index=False))
 
+# As expected the sample splitting version has better coverage than the no splitting version. 
+# The no sample splitting version is too optimistic and has coverage below the nominal level.
+
 
 
 
