@@ -116,5 +116,3 @@ if __name__ == "__main__":
     ax.legend(loc="upper left", frameon=False)
     fig.tight_layout()
     plt.show()
-    #fig.savefig("fused_bounds_py.png", dpi=110)
-    #print("\nPlot written to fused_bounds_py.png")

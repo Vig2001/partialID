@@ -32,8 +32,8 @@ def simulate_dgp(n,
                                  #  biased UP -- the two bands then trim each
                                  #  other on opposite sides)
                  delta_c=1.2,    # U_c -> outcome
-                 tau0=0.8,       # baseline treatment effect (log-odds)
-                 tau_m=1.4,      # effect modification by U_m
+                 beta_0=0.8,     # baseline treatment effect (log-odds)
+                 beta_m=1.4,     # effect modification by U_m
                  cont=True,      # Toggle for continuous outcome
                  sigma_y=1.0,    # Noise standard deviation if continuous
                  rng=rng):
@@ -60,7 +60,7 @@ def simulate_dgp(n,
         # CONTINUOUS OUTCOME
         # --------------------------------------------------------------------
         mu0 = lin0
-        mu1 = lin0 + tau0 + tau_m * U_m
+        mu1 = lin0 + beta_0 + beta_m * U_m
         Y0 = rng.normal(mu0, sigma_y)
         Y1 = rng.normal(mu1, sigma_y)
         # consistency assumption
@@ -74,7 +74,7 @@ def simulate_dgp(n,
         # BINARY OUTCOME
         # --------------------------------------------------------------------
         p0 = expit(lin0)
-        p1 = expit(lin0 + tau0 + tau_m * U_m)
+        p1 = expit(lin0 + beta_0 + beta_m * U_m)
         Y0 = rng.binomial(1, p0)
         Y1 = rng.binomial(1, p1)
         Y = np.where(T == 1, Y1, Y0)
@@ -83,7 +83,9 @@ def simulate_dgp(n,
                                  Y=Y, Y0=Y0, Y1=Y1, p0=p0, p1=p1))
 
 
-def true_tau_S0(n=2_000_000, **kw):
+
+# Large sample approximation of the true target estimand E[Y(1)-Y(0) | S=0] using 1000000 samples
+def true_tau_S0(n=1_000_000, **kw):
     """True target estimand E[Y(1)-Y(0) | S=0], by Monte Carlo."""
     d = simulate_dgp(n, rng=np.random.default_rng(1), **kw)
     s0 = d["S"] == 0

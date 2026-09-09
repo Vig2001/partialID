@@ -55,7 +55,12 @@ def fit_logit(X, y):
 
 def zsb_bounds(dat, Lambda, trim=0.01):
     os_ = dat[dat["S"] == 0]
-    X = os_[["X1", "X2"]].to_numpy()
+
+    # dynamically infer covariates from the dataframe, rather than hardcoding them
+    exclude_cols = ["S", "T", "Y", "U_m", "U_c "]
+    X_cols = [col for col in os_.columns if col not in exclude_cols]
+
+    X = os_[X_cols].to_numpy()
     ehat = fit_logit(X, os_["T"].to_numpy()).predict_proba(X)[:, 1]
     ehat = np.clip(ehat, trim, 1 - trim)
 
@@ -88,9 +93,8 @@ def zsb_bounds(dat, Lambda, trim=0.01):
 # whose conditional mean given (X, U) is the conditional treatment effect.
 # Extremizing the Hajek mean of psi over the lambda box yields valid
 # (conservative) bounds on E[Y(1) - Y(0) | S = 0].
-# (NIW additionally re-balance observed covariates when optimizing the
-# weights; with a correctly specified pi(x), the plain odds-band optimization
-# below conveys the same identification logic in a dependency-light way.)
+# NOTE: The NIW procedure below does not include covariate balancing constraints
+# They are not needed for validity but can tighten the bounds.
 
 # The weights here are slightly different than of the IPW
 # They depend on the density ratio between being in S=0 vs S=1
@@ -98,13 +102,15 @@ def zsb_bounds(dat, Lambda, trim=0.01):
 # Blowing up the weights
 
 def niw_bounds(dat, Gamma, p_trt=0.5, trim=0.01):
-    X_all = dat[["X1", "X2"]].to_numpy()
+    exclude_cols = ["S", "T", "Y", "U_m", "U_c "]
+    X_cols = [col for col in dat.columns if col not in exclude_cols]
+    X_all = dat[X_cols].to_numpy()
     pi_hat = fit_logit(X_all, dat["S"].to_numpy()).predict_proba(X_all)[:, 1]
     pi_hat = np.clip(pi_hat, trim, 1 - trim)
 
     rct = dat["S"].to_numpy() == 1
     tr = dat[rct]
-    Xtr = tr[["X1", "X2"]].to_numpy()
+    Xtr = tr[X_cols].to_numpy()
     Ttr = tr["T"].to_numpy()
     Ytr = tr["Y"].to_numpy().astype(float)
 
@@ -134,16 +140,26 @@ def fuse_bounds(b_zsb, b_niw):
     return lo, hi, lo > hi   # (lower, upper, empty?)
 
 
-# Nuisance function estimation
+# ----------------------------------------------------------------------------
+# These are functions equivalent to the above but allow for nuisance fits 
+# to be done once and reused!
+# The above functions re-fit the nuisances every time they are called 
+# which is inefficient and unnecessary for multiple samples
+# ----------------------------------------------------------------------------
 def fit_zsb_components(dat, trim=0.01):
     """Fit the OS nuisances once; return the pieces the ZSB Hajek
-    extremization needs. Mirrors point_bounds.zsb_bounds exactly."""
+    extremization needs. Mirrors zsb_bounds exactly."""
     os_ = dat[dat["S"] == 0]
-    X = os_[["X1", "X2"]].to_numpy()
+
+    exclude_cols = ["S", "T", "Y", "U_m", "U_c "]
+    X_cols = [col for col in os_.columns if col not in exclude_cols]
+    X = os_[X_cols].to_numpy()
+
     ehat = fit_logit(X, os_["T"].to_numpy()).predict_proba(X)[:, 1]
     ehat = np.clip(ehat, trim, 1 - trim)
     i1 = os_["T"].to_numpy() == 1
     y = os_["Y"].to_numpy().astype(float)
+    # a1 is the inverse odds for being treated
     return dict(y1=y[i1], a1=(1 - ehat[i1]) / ehat[i1],
                 y0=y[~i1], a0=ehat[~i1] / (1 - ehat[~i1]))
 
@@ -160,16 +176,20 @@ def zsb_from_components(c, Lam):
 
 def fit_niw_components(dat, p_trt=0.5, trim=0.01):
     """Fit the transport nuisances once; return the NIW pseudo-outcome and
-    odds weights. Mirrors point_bounds.niw_bounds exactly."""
-    X_all = dat[["X1", "X2"]].to_numpy()
+    odds weights. Mirrors niw_bounds exactly."""
+    exclude_cols = ["S", "T", "Y", "U_m", "U_c "]
+    X_cols = [col for col in dat.columns if col not in exclude_cols]
+    X_all = dat[X_cols].to_numpy()
+
     pi_hat = fit_logit(X_all, dat["S"].to_numpy()).predict_proba(X_all)[:, 1]
     pi_hat = np.clip(pi_hat, trim, 1 - trim)
     rct = dat["S"].to_numpy() == 1
     tr = dat[rct]
-    Xtr = tr[["X1", "X2"]].to_numpy()
+    
+    Xtr = tr[X_cols].to_numpy()
     Ttr = tr["T"].to_numpy()
     Ytr = tr["Y"].to_numpy().astype(float)
-# Auto-detect if outcome is continuous (if not exclusively 0s and 1s)
+    # Auto-detect if outcome is continuous (if not exclusively 0s and 1s)
     is_continuous = not np.all(np.isin(Ytr, [0, 1]))
     
     if is_continuous:
@@ -196,10 +216,12 @@ def niw_from_components(c, Gam):
             hajek_extreme(c["psi"], c["a"], zeros, 1 / Gam, Gam, True))
 
 
-def fit_components_ok(d, rng, max_tries=50):
-    """Draw bootstrap resamples until both nuisance fits succeed. A small
-    fold / small RCT can leave a trial arm with single-class Y, which
-    breaks the logistic fit; redrawing is the standard pragmatic fix."""
+def fit_components_boot(d, rng, max_tries=50):
+    """Draw bootstrap resamples until both nuisance fits succeed.
+     
+    A small fold / small RCT can leave a trial arm with single-class Y, which
+    breaks the logistic fit; redrawing is the standard pragmatic fix.
+    """
     n = len(d)
     for _ in range(max_tries):
         db = d.iloc[rng.integers(0, n, n)]
@@ -210,9 +232,10 @@ def fit_components_ok(d, rng, max_tries=50):
     raise RuntimeError("too many degenerate bootstrap resamples; "
                        "increase n or the fold size")
 
-# We get the true upper and lower bounds by finding calculating the large sample estimates
-# The reason for this is because it doesn't seem intuitive to find the true ID set using simulation
-def pseudo_true_grid(lam_grid, gam_grid, n=400_000, seed=rng):
+# This might be removed because we could move to simulation2.py
+# which involves bounded discrete distributions
+# hence a true partial ID interval can be reasoned about!
+def pseudo_true_grid(lam_grid, gam_grid, n=1_000_000, seed=rng):
     """Population (pseudo-true) fused endpoints on the grid -- the
     set-coverage target. One very large draw, nuisances fit once."""
 

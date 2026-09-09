@@ -23,7 +23,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from scipy.stats import gaussian_kde
 
-from main.initial_demo import simulate_dgp, zsb_bounds, niw_bounds
+from initial_demo import simulate_dgp, zsb_bounds, niw_bounds
 
 rng = np.random.default_rng(7)
 
@@ -109,5 +109,3 @@ fig.suptitle("Lower-Bound Bootstrap Distributions",
              fontsize=18)
 fig.tight_layout()
 plt.show()
-#fig.savefig("/home/claude/lower_bound_dists.png", dpi=120)
-#print("rendered lower_bound_dists.png")

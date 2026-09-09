@@ -1,62 +1,37 @@
-### -----------------
-# Lanners' et al advocate for a convex combination of two ID sets
-# The purpose is to allow for a smoothing of a max and min operator that comes
-# with taking the intersection of two ID sets.
-# I believe that Lanners' propose a weight that is close to 0 or 1
-# However, I think the more general approach is to find a weight that minimises the width of the CI
-### -----------------
+"""Lanners' et al advocate for a convex combination of two ID sets.
 
-# Another method considered in initial_demo.py is the intersection of two intervals
-# Note that this is not valid at the same level
-# But if we widen the individual CIs to account for Bonferroni correction
-# we can get a valid CI for the intersection of two ID sets. 
-# Is this ID set guaranteed to be narrower than the convex combination?
-# If not then when is the convex combination better than this operation? Always?
+The purpose is to allow for a smoothing of a max and min operator that comes
+with taking the intersection of two ID sets. Lanners' propose a weight that
+is close to 0 or 1; the more general approach is to find a data-dependent 
+weight that minimises the width of the confidence interval (CI).
+
+Another method considered in initial_demo.py is the intersection of two
+intervals. This is not valid at the same level, but if we widen the
+individual CIs to account for Bonferroni correction we can get a valid CI for
+the intersection of two ID bands. Questions remain: is this ID set guaranteed
+to be narrower than the convex combination? If not, when is the convex
+combination preferable?
+"""
 
 import numpy as np
 import pandas as pd
+from scipy.stats import norm, gaussian_kde
+from scipy.optimize import minimize_scalar, brentq
 from helpers.simulation1 import simulate_dgp, true_tau_S0
-from scipy.stats import gaussian_kde
-from scipy.optimize import minimize_scalar
-
 np.random.seed(7)
 
 # Lower and upper bounds from two sensitivity schemes - assumed to be asymptotically normal
 # This parameter choice gives an interior minimizer for the two-weight construction.
-alpha = 0.05 # significance level but not needed as standard normal quantiles are used in the CI construction
-BOUND_SHIFT = 0.16  # fixed offset for coverage analysis
-# To explain - the CI will only cover the truth if the sensitivity scheme bounds are valid
-# Valid meaning that the sample bounds contain the truth some of the time
-# In this toy example we have no sensitivity scheme and the bounds are chosen rather arbitrarily.
-# So we shift the lower and upper bounds by a fixed amount
-# This essentially prevents thhe true tau from always being outside the sample bounds
-
-# Plan: 
-# 1. Create a simulaton to compare the coverage with and without sample splitting
-# 2. Explicitly - generate a random dataset
-# 3. As a toy exmaple calculate the bounds 
-# 3. Using the mean of the lower quantile and upper quantile of the outcome variable <- Not causal
-# 4. Now we have 4 bounds - two from the OS and two from the RCT
-# 5. Find the optimal weight using smaple splitting 
-# 5. i.e. use the first half of the data to find the optimal weight and then use the second half of the data to construct the CI
-# 5. The optimal weight is the one that minimises the expected width of the CI
-# 6. Compare the coverage of the CI with and without sample splitting
-# 7. How does the optimal weight from sample splitting compare with the grid search?
-# 8. How does sample splitting compare with the intersection of the two ID sets?
+alpha = 0.05 # significance level
 
 n = 5000
-dat = simulate_dgp(n) 
-# Dat is a pandas dataframe with columns: 
-# X1, X2, U_m, U_c, S, T, Y, Y0, Y1, mu0, mu1
-tau = true_tau_S0() # true value of estimand E[Y1 - Y0 | S=0]
+
+dat = simulate_dgp(n, rng=np.random.default_rng(7))
 
 # As a toy example we will take the lower and upper bounds from the OS and RCT 
 # To be the 25th and 75th quantiles of the outcome variable in each dataset.
 # From asymptotic theory we know sample quantiles are asymptotically normal.
 # In practice these would be the bounds from a sensitivity analysis scheme.
-
-# If we extend to use the simple MSM schemes make sure to check normality of the bounds.
-# This is important for the validity of the optimisation scheme.
 
 OS_dat = dat[dat['S'] == 0]
 RCT_dat = dat[dat['S'] == 1]
@@ -98,24 +73,15 @@ def quantile_variance(data, q):
     var = (q * (1 - q)) / (n * fyq**2)
     return var
 
-var_L1 = quantile_variance(OS_dat['Y'], 0.25) # estimated 0.00082
-var_U1 = quantile_variance(OS_dat['Y'], 0.75) # estimated 0.00087
-var_L2 = quantile_variance(RCT_dat['Y'], 0.25)# estimated 0.026
-var_U2 = quantile_variance(RCT_dat['Y'], 0.75)# esimtated 0.039
+var_L1 = quantile_variance(OS_dat['Y'], 0.25) 
+var_U1 = quantile_variance(OS_dat['Y'], 0.75)
+var_L2 = quantile_variance(RCT_dat['Y'], 0.25)
+var_U2 = quantile_variance(RCT_dat['Y'], 0.75)
 
 # The intersection of the two intervals is given by 
 # max of lower bounds and min of upper bounds
 L_intersection = np.maximum(L1, L2)
 U_intersection = np.minimum(U1, U2)
-
-
-# ------- GRID SEARCH FOR OPTIMAL WEIGHTS --------
-# Search over separate weights for the lower and upper endpoints.
-grid = np.linspace(0, 1, 51)
-grid_width = np.inf
-grid_w1, grid_w2 = None, None
-grid_L_convex = None
-grid_U_convex = None
 
 # Now we can compute the confidence intervals for the convex combination
 # This assumes that the estimates from 1 and 2 are independent
@@ -125,28 +91,11 @@ def compute_ci(Lf, Uf, w1, w2,
     upper_ci = Uf + 1.96 * np.sqrt(w2**2 * var_U1 + (1 - w2)**2 * var_U2)
     return lower_ci, upper_ci
 
-for w1 in grid:
-    candidate_L = w1 * L1 + (1 - w1) * L2
-    for w2 in grid:
-        candidate_U = w2 * U1 + (1 - w2) * U2
-        lower_candidate, upper_candidate = compute_ci(candidate_L, candidate_U, w1, w2)
-        candidate_width = upper_candidate - lower_candidate
-        if candidate_width < grid_width:
-            grid_width = candidate_width
-            grid_w1, grid_w2 = w1, w2
-            grid_L_convex = candidate_L
-            grid_U_convex = candidate_U
-
-L_convex = grid_L_convex
-U_convex = grid_U_convex
-
 # Because L2 is max and U1 is min we set w1 = 0 and w2 = 1 for the intersection CI
 lower_intersection, upper_intersection = compute_ci(L_intersection, U_intersection, 0, 1)
 lower_rct, upper_rct = compute_ci(L2, U2, 0, 0)
 lower_obs, upper_obs = compute_ci(L1, U1, 1, 1)
-lower_convex, upper_convex = compute_ci(L_convex, U_convex, grid_w1, grid_w2)
 width_intersection = upper_intersection - lower_intersection
-width_convex = upper_convex - lower_convex
 
 summary_rows.extend([
     {
@@ -172,15 +121,7 @@ summary_rows.extend([
         "Width": width_intersection,
         "w1": 0.0,
         "w2": 1.0,
-    },
-    {
-        "Result": "Grid convex combination",
-        "Lower": lower_convex,
-        "Upper": upper_convex,
-        "Width": width_convex,
-        "w1": grid_w1,
-        "w2": grid_w2,
-    },
+    }
 ])
 
 
@@ -206,8 +147,7 @@ var_U1_split = quantile_variance(OS_dat1['Y'], 0.75)
 var_L2_split = quantile_variance(RCT_dat1['Y'], 0.25)
 var_U2_split = quantile_variance(RCT_dat1['Y'], 0.75)
 
-
-def get_omeega1(mu_cnf, mu_tpt, var_cnf, var_tpt, z=1.96):
+def get_omega1(mu_cnf, mu_tpt, var_cnf, var_tpt, z=1.96):
     """
     Finds the optimal weight w in [0,1] to MAXIMIZE the expected lower bound.
     """
@@ -238,7 +178,7 @@ def get_omega2(mu_cnf, mu_tpt, var_cnf, var_tpt, z=1.96):
     return result.x
 
 # find optmal weights using the first half of the data
-optim_w1 = get_omeega1(L1_split, L2_split, var_L1_split, var_L2_split)
+optim_w1 = get_omega1(L1_split, L2_split, var_L1_split, var_L2_split)
 optim_w2 = get_omega2(U1_split, U2_split, var_U1_split, var_U2_split)
 
 # estimate on split 2
@@ -267,10 +207,6 @@ summary_rows.append({
     "w2": optim_w2,
 })
 
-# Surprisingly the optimal weights from sample splitting outperform the grid search weights in this case.
-# In that the confidence interval is narrower.
-# Suppose we didn't split the data what happens?
-
 L1_nosplit = OS_dat['Y'].quantile(0.25)
 U1_nosplit = OS_dat['Y'].quantile(0.75)
 L2_nosplit = RCT_dat['Y'].quantile(0.25)
@@ -281,7 +217,7 @@ var_U1_nosplit = quantile_variance(OS_dat['Y'], 0.75)
 var_L2_nosplit = quantile_variance(RCT_dat['Y'], 0.25)
 var_U2_nosplit = quantile_variance(RCT_dat['Y'], 0.75)
 
-nosplit_w1 = get_omeega1(L1_nosplit, L2_nosplit, var_L1_nosplit, var_L2_nosplit)
+nosplit_w1 = get_omega1(L1_nosplit, L2_nosplit, var_L1_nosplit, var_L2_nosplit)
 nosplit_w2 = get_omega2(U1_nosplit, U2_nosplit, var_U1_nosplit, var_U2_nosplit)
 
 L_fused_nosplit = nosplit_w1 * L1_nosplit + (1 - nosplit_w1) * L2_nosplit
@@ -302,11 +238,19 @@ summary_table = pd.DataFrame(summary_rows)
 with pd.option_context("display.max_rows", None, "display.max_columns", None, "display.width", 120, "display.float_format", "{:.3f}".format):
     print(summary_table.to_string(index=False))
 
-# Interesting to see that the no sample splitting version is very close to the grid search version.
-# Let's perform some coverage analysis to see how the two versions perform in terms of coverage.
+# ------ COVERAGE ANALYSIS ------
 
+# We need to run monte carlo simulations to estimate the coverage of the sample splitting CI and the no sample splitting CI
+# The coverage is with respect to the true fused quantiles of the outcome variable in the population.
 
-def build_split_interval(dat, split=True, split_seed=None):
+def build_split_interval(dat, ql, qu, split=True, split_seed=None):
+    """Builds a confidence interval for the fused quantiles using sample splitting.
+
+    If split is False, then the CI is built without sample splitting.
+    If split is True, then the CI is built with sample splitting,
+    where we enforce the proportion of OS:RCT sample size to be constant 
+    across the two halves of the split."""
+
     os_dat = dat[dat['S'] == 0]
     rct_dat = dat[dat['S'] == 1]
 
@@ -316,58 +260,58 @@ def build_split_interval(dat, split=True, split_seed=None):
         rct_dat1 = rct_dat.sample(frac=0.5, random_state=split_seed)
         rct_dat2 = rct_dat.drop(rct_dat1.index)
 
-        l1 = os_dat1['Y'].quantile(0.25)
-        u1 = os_dat1['Y'].quantile(0.75)
-        l2 = rct_dat1['Y'].quantile(0.25)
-        u2 = rct_dat1['Y'].quantile(0.75)
+        l1 = os_dat1['Y'].quantile(ql)
+        u1 = os_dat1['Y'].quantile(qu)
+        l2 = rct_dat1['Y'].quantile(ql)
+        u2 = rct_dat1['Y'].quantile(qu)
 
-        var_l1 = quantile_variance(os_dat1['Y'], 0.25)
-        var_u1 = quantile_variance(os_dat1['Y'], 0.75)
-        var_l2 = quantile_variance(rct_dat1['Y'], 0.25)
-        var_u2 = quantile_variance(rct_dat1['Y'], 0.75)
+        var_l1 = quantile_variance(os_dat1['Y'], ql)
+        var_u1 = quantile_variance(os_dat1['Y'], qu)
+        var_l2 = quantile_variance(rct_dat1['Y'], ql)
+        var_u2 = quantile_variance(rct_dat1['Y'], qu)
 
-        w1 = get_omeega1(l1, l2, var_l1, var_l2)
+        w1 = get_omega1(l1, l2, var_l1, var_l2)
         w2 = get_omega2(u1, u2, var_u1, var_u2)
 
-        l1_eval = os_dat2['Y'].quantile(0.25)
-        u1_eval = os_dat2['Y'].quantile(0.75)
-        l2_eval = rct_dat2['Y'].quantile(0.25)
-        u2_eval = rct_dat2['Y'].quantile(0.75)
+        l1_eval = os_dat2['Y'].quantile(ql)
+        u1_eval = os_dat2['Y'].quantile(qu)
+        l2_eval = rct_dat2['Y'].quantile(ql)
+        u2_eval = rct_dat2['Y'].quantile(qu)
 
-        var_l1_eval = quantile_variance(os_dat2['Y'], 0.25)
-        var_u1_eval = quantile_variance(os_dat2['Y'], 0.75)
-        var_l2_eval = quantile_variance(rct_dat2['Y'], 0.25)
-        var_u2_eval = quantile_variance(rct_dat2['Y'], 0.75)
+        var_l1_eval = quantile_variance(os_dat2['Y'], ql)
+        var_u1_eval = quantile_variance(os_dat2['Y'], qu)
+        var_l2_eval = quantile_variance(rct_dat2['Y'], ql)
+        var_u2_eval = quantile_variance(rct_dat2['Y'], qu)
 
         l_fused = w1 * l1_eval + (1 - w1) * l2_eval
         u_fused = w2 * u1_eval + (1 - w2) * u2_eval
 
-        l_fused = l_fused + BOUND_SHIFT
-        u_fused = u_fused + BOUND_SHIFT
+        # l_fused = l_fused + BOUND_SHIFT
+        # u_fused = u_fused + BOUND_SHIFT
 
         lower, upper = compute_ci(
             l_fused, u_fused, w1, w2,
             var_l1_eval, var_u1_eval, var_l2_eval, var_u2_eval,
         )
     else:
-        l1 = os_dat['Y'].quantile(0.25)
-        u1 = os_dat['Y'].quantile(0.75)
-        l2 = rct_dat['Y'].quantile(0.25)
-        u2 = rct_dat['Y'].quantile(0.75)
+        l1 = os_dat['Y'].quantile(ql)
+        u1 = os_dat['Y'].quantile(qu)
+        l2 = rct_dat['Y'].quantile(ql)
+        u2 = rct_dat['Y'].quantile(qu)
 
-        var_l1 = quantile_variance(os_dat['Y'], 0.25)
-        var_u1 = quantile_variance(os_dat['Y'], 0.75)
-        var_l2 = quantile_variance(rct_dat['Y'], 0.25)
-        var_u2 = quantile_variance(rct_dat['Y'], 0.75)
+        var_l1 = quantile_variance(os_dat['Y'], ql)
+        var_u1 = quantile_variance(os_dat['Y'], qu)
+        var_l2 = quantile_variance(rct_dat['Y'], ql)
+        var_u2 = quantile_variance(rct_dat['Y'], qu)
 
-        w1 = get_omeega1(l1, l2, var_l1, var_l2)
+        w1 = get_omega1(l1, l2, var_l1, var_l2)
         w2 = get_omega2(u1, u2, var_u1, var_u2)
 
         l_fused = w1 * l1 + (1 - w1) * l2
         u_fused = w2 * u1 + (1 - w2) * u2
 
-        l_fused = l_fused + BOUND_SHIFT
-        u_fused = u_fused + BOUND_SHIFT
+        # l_fused = l_fused + BOUND_SHIFT
+        # u_fused = u_fused + BOUND_SHIFT
 
         lower, upper = compute_ci(
             l_fused, u_fused, w1, w2,
@@ -378,36 +322,60 @@ def build_split_interval(dat, split=True, split_seed=None):
         "lower": lower,
         "upper": upper,
         "width": upper - lower,
-        "shift": BOUND_SHIFT,
+        # "shift": BOUND_SHIFT,
         "w1": w1,
         "w2": w2,
     }
 
-
-coverage_mc = 100
+coverage_mc = 1000
 coverage_rng = np.random.default_rng(7)
 coverage_rows = []
+ql, qu = 0.25, 0.75  # quantiles for the bounds
+
+def true_fused_quantiles(n=1_000_000, ql=0.25, qu=0.75):
+    """True fused quantiles of the outcome variable in a large sample population."""
+    d = simulate_dgp(n, rng=np.random.default_rng(1))
+    os_dat = d[d['S'] == 0]
+    rct_dat = d[d['S'] == 1]
+
+    l1 = os_dat['Y'].quantile(ql)
+    u1 = os_dat['Y'].quantile(qu)
+    l2 = rct_dat['Y'].quantile(ql)
+    u2 = rct_dat['Y'].quantile(qu)
+
+    var_l1 = quantile_variance(os_dat['Y'], ql)
+    var_u1 = quantile_variance(os_dat['Y'], qu)
+    var_l2 = quantile_variance(rct_dat['Y'], ql)
+    var_u2 = quantile_variance(rct_dat['Y'], qu)
+
+    w1 = get_omega1(l1, l2, var_l1, var_l2)
+    w2 = get_omega2(u1, u2, var_u1, var_u2)
+
+    l_fused = w1 * l1 + (1 - w1) * l2
+    u_fused = w2 * u1 + (1 - w2) * u2
+
+    return l_fused, u_fused
+
+true_l_fused, true_u_fused = true_fused_quantiles()
 
 for _ in range(coverage_mc):
     dat_mc = simulate_dgp(n, rng=coverage_rng)
     split_seed = int(coverage_rng.integers(0, 2**32 - 1))
 
-    split_ci = build_split_interval(dat_mc, split=True, split_seed=split_seed)
-    nosplit_ci = build_split_interval(dat_mc, split=False)
+    split_ci = build_split_interval(dat_mc, ql, qu, split=True, split_seed=split_seed)
+    nosplit_ci = build_split_interval(dat_mc, ql, qu, split=False)
 
     coverage_rows.append({
         "Method": "Sample splitting CI",
-        "Covered": int(split_ci["lower"] <= tau <= split_ci["upper"]),
+        "Covered": int(split_ci["lower"] <= true_l_fused and true_u_fused <= split_ci["upper"]),
         "Width": split_ci["width"],
-        "Shift": split_ci["shift"],
         "w1": split_ci["w1"],
         "w2": split_ci["w2"],
     })
     coverage_rows.append({
         "Method": "No sample splitting CI",
-        "Covered": int(nosplit_ci["lower"] <= tau <= nosplit_ci["upper"]),
+        "Covered": int(nosplit_ci["lower"] <= true_l_fused and true_u_fused <= nosplit_ci["upper"]),
         "Width": nosplit_ci["width"],
-        "Shift": nosplit_ci["shift"],
         "w1": nosplit_ci["w1"],
         "w2": nosplit_ci["w2"],
     })
@@ -418,21 +386,16 @@ coverage_summary = (
     .agg(
         Coverage=("Covered", "mean"),
         Avg_Width=("Width", "mean"),
-        Avg_Shift=("Shift", "mean"),
         Mean_w1=("w1", "mean"),
         Mean_w2=("w2", "mean"),
     )
-    .rename(columns={"Avg_Width": "Avg Width", "Avg_Shift": "Avg Shift", "Mean_w1": "Mean w1", "Mean_w2": "Mean w2"})
+    .rename(columns={"Avg_Width": "Avg Width", "Mean_w1": "Mean w1", "Mean_w2": "Mean w2"})
 )
 
 print(f"\nCoverage analysis over {coverage_mc} simulated datasets (target = {1 - alpha:.3f})")
-print(f"True tau_S0 = {tau:.3f}")
-print(f"Note: the estimated bounds are shifted by a fixed scalar of {BOUND_SHIFT:.2f} before the CI is built.")
 with pd.option_context("display.max_rows", None, "display.max_columns", None, "display.width", 120, "display.float_format", "{:.3f}".format):
     print(coverage_summary.to_string(index=False))
 
-# As expected the sample splitting version has better coverage than the no splitting version. 
-# The no sample splitting version is too optimistic and has coverage below the nominal level.
 
 
 
