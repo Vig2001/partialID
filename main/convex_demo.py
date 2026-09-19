@@ -2,22 +2,25 @@
 
 The purpose is to allow for a smoothing of a max and min operator that comes
 with taking the intersection of two ID sets. Lanners' propose a weight that
-is close to 0 or 1; the more general approach is to find a data-dependent 
+is close to 0 or 1; the more general approach would be to find a data-dependent 
 weight that minimises the width of the confidence interval (CI).
 
-Another method considered in initial_demo.py is the intersection of two
-intervals. This is not valid at the same level, but if we widen the
-individual CIs to account for Bonferroni correction we can get a valid CI for
-the intersection of two ID bands. Questions remain: is this ID set guaranteed
-to be narrower than the convex combination? If not, when is the convex
-combination preferable?
+Questions remain: is this CI guaranteed to be narrower than the convex combination CI? 
+If not, when is the convex combination preferable?
+Can we change the splitting process to improve performance i.e. reduce width
+
+The naive interseciton undercovers in the finite sample case maybe because of the winner's
+curse. If we send the bounds really far apart from one another and increase the n large enough
+(for variance estimation efficiency) we regain coverage. For some reason we also see a drop in
+coverage of our sample splitting method - maybe loss in efficiency from sample splitting?
 """
 
 import numpy as np
 import pandas as pd
 from scipy.stats import norm, gaussian_kde
-from scipy.optimize import minimize_scalar, brentq
-from helpers.simulation1 import simulate_dgp, true_tau_S0
+from scipy.optimize import minimize_scalar
+from helpers.simulation1 import simulate_dgp
+import matplotlib.pyplot as plt
 np.random.seed(7)
 
 # Lower and upper bounds from two sensitivity schemes - assumed to be asymptotically normal
@@ -25,8 +28,9 @@ np.random.seed(7)
 alpha = 0.05 # significance level
 
 n = 5000
+gamma_s = 1.2
 
-dat = simulate_dgp(n, rng=np.random.default_rng(7))
+dat = simulate_dgp(n, gamma_s=gamma_s, rng=np.random.default_rng(7))
 
 # As a toy example we will take the lower and upper bounds from the OS and RCT 
 # To be the 25th and 75th quantiles of the outcome variable in each dataset.
@@ -38,13 +42,15 @@ RCT_dat = dat[dat['S'] == 1]
 
 summary_rows = []
 
+ql, qu = 0.10, 0.90  # quantiles for the bounds
+
 # sample quantiles OS
-L1 = OS_dat['Y'].quantile(0.25)
-U1 = OS_dat['Y'].quantile(0.75)
+L1 = OS_dat['Y'].quantile(ql)
+U1 = OS_dat['Y'].quantile(qu)
 
 # sample quantiles RCT
-L2 = RCT_dat['Y'].quantile(0.25)
-U2 = RCT_dat['Y'].quantile(0.75)
+L2 = RCT_dat['Y'].quantile(ql)
+U2 = RCT_dat['Y'].quantile(qu)
 
 summary_rows.append({
     "Result": "Point bounds from OS",
@@ -73,10 +79,10 @@ def quantile_variance(data, q):
     var = (q * (1 - q)) / (n * fyq**2)
     return var
 
-var_L1 = quantile_variance(OS_dat['Y'], 0.25) 
-var_U1 = quantile_variance(OS_dat['Y'], 0.75)
-var_L2 = quantile_variance(RCT_dat['Y'], 0.25)
-var_U2 = quantile_variance(RCT_dat['Y'], 0.75)
+var_L1 = quantile_variance(OS_dat['Y'], ql) 
+var_U1 = quantile_variance(OS_dat['Y'], qu)
+var_L2 = quantile_variance(RCT_dat['Y'], ql)
+var_U2 = quantile_variance(RCT_dat['Y'], qu)
 
 # The intersection of the two intervals is given by 
 # max of lower bounds and min of upper bounds
@@ -137,15 +143,15 @@ RCT_dat1 = RCT_dat.sample(frac=0.5, random_state=7)
 RCT_dat2 = RCT_dat.drop(RCT_dat1.index)
 
 # estimate on split 1
-L1_split = OS_dat1['Y'].quantile(0.25)
-U1_split = OS_dat1['Y'].quantile(0.75)
-L2_split = RCT_dat1['Y'].quantile(0.25)
-U2_split = RCT_dat1['Y'].quantile(0.75)
+L1_split = OS_dat1['Y'].quantile(ql)
+U1_split = OS_dat1['Y'].quantile(qu)
+L2_split = RCT_dat1['Y'].quantile(ql)
+U2_split = RCT_dat1['Y'].quantile(qu)
 
-var_L1_split = quantile_variance(OS_dat1['Y'], 0.25)
-var_U1_split = quantile_variance(OS_dat1['Y'], 0.75)
-var_L2_split = quantile_variance(RCT_dat1['Y'], 0.25)
-var_U2_split = quantile_variance(RCT_dat1['Y'], 0.75)
+var_L1_split = quantile_variance(OS_dat1['Y'], ql)
+var_U1_split = quantile_variance(OS_dat1['Y'], qu)
+var_L2_split = quantile_variance(RCT_dat1['Y'], ql)
+var_U2_split = quantile_variance(RCT_dat1['Y'], qu)
 
 def get_omega1(mu_cnf, mu_tpt, var_cnf, var_tpt, z=1.96):
     """
@@ -182,15 +188,15 @@ optim_w1 = get_omega1(L1_split, L2_split, var_L1_split, var_L2_split)
 optim_w2 = get_omega2(U1_split, U2_split, var_U1_split, var_U2_split)
 
 # estimate on split 2
-L1_split2 = OS_dat2['Y'].quantile(0.25)
-U1_split2 = OS_dat2['Y'].quantile(0.75)
-L2_split2 = RCT_dat2['Y'].quantile(0.25)
-U2_split2 = RCT_dat2['Y'].quantile(0.75)
+L1_split2 = OS_dat2['Y'].quantile(ql)
+U1_split2 = OS_dat2['Y'].quantile(qu)
+L2_split2 = RCT_dat2['Y'].quantile(ql)
+U2_split2 = RCT_dat2['Y'].quantile(qu)
 
-var_L1_split2 = quantile_variance(OS_dat2['Y'], 0.25)
-var_U1_split2 = quantile_variance(OS_dat2['Y'], 0.75)
-var_L2_split2 = quantile_variance(RCT_dat2['Y'], 0.25)
-var_U2_split2 = quantile_variance(RCT_dat2['Y'], 0.75)
+var_L1_split2 = quantile_variance(OS_dat2['Y'], ql)
+var_U1_split2 = quantile_variance(OS_dat2['Y'], qu)
+var_L2_split2 = quantile_variance(RCT_dat2['Y'], ql)
+var_U2_split2 = quantile_variance(RCT_dat2['Y'], qu)
 
 # find fused esitmates using optimal weights from split 1
 L_fused = optim_w1 * L1_split2 + (1 - optim_w1) * L2_split2
@@ -207,15 +213,15 @@ summary_rows.append({
     "w2": optim_w2,
 })
 
-L1_nosplit = OS_dat['Y'].quantile(0.25)
-U1_nosplit = OS_dat['Y'].quantile(0.75)
-L2_nosplit = RCT_dat['Y'].quantile(0.25)
-U2_nosplit = RCT_dat['Y'].quantile(0.75)
+L1_nosplit = OS_dat['Y'].quantile(ql)
+U1_nosplit = OS_dat['Y'].quantile(qu)
+L2_nosplit = RCT_dat['Y'].quantile(ql)
+U2_nosplit = RCT_dat['Y'].quantile(qu)
 
-var_L1_nosplit = quantile_variance(OS_dat['Y'], 0.25)
-var_U1_nosplit = quantile_variance(OS_dat['Y'], 0.75)
-var_L2_nosplit = quantile_variance(RCT_dat['Y'], 0.25)
-var_U2_nosplit = quantile_variance(RCT_dat['Y'], 0.75)
+var_L1_nosplit = quantile_variance(OS_dat['Y'], ql)
+var_U1_nosplit = quantile_variance(OS_dat['Y'], qu)
+var_L2_nosplit = quantile_variance(RCT_dat['Y'], ql)
+var_U2_nosplit = quantile_variance(RCT_dat['Y'], qu)
 
 nosplit_w1 = get_omega1(L1_nosplit, L2_nosplit, var_L1_nosplit, var_L2_nosplit)
 nosplit_w2 = get_omega2(U1_nosplit, U2_nosplit, var_U1_nosplit, var_U2_nosplit)
@@ -238,9 +244,31 @@ summary_table = pd.DataFrame(summary_rows)
 with pd.option_context("display.max_rows", None, "display.max_columns", None, "display.width", 120, "display.float_format", "{:.3f}".format):
     print(summary_table.to_string(index=False))
 
-# ------ COVERAGE ANALYSIS ------
 
-# We need to run monte carlo simulations to estimate the coverage of the sample splitting CI and the no sample splitting CI
+# Checking distributions
+os  = dat[dat.S==0].Y.to_numpy()
+rct = dat[dat.S==1].Y.to_numpy()
+
+
+grid = np.linspace(min(os.min(),rct.min()), max(os.max(),rct.max()), 400)
+fig, ax = plt.subplots(figsize=(9,5))
+for y, name, c in [(os,"OS  (S=0)","C0"), (rct,"RCT (S=1)","C1")]:
+    dens = gaussian_kde(y)(grid)
+    ax.plot(grid, dens, color=c, lw=2, label=f"{name},  n={len(y):,}")
+    ax.fill_between(grid, dens, color=c, alpha=0.15)
+    q10, q90 = np.quantile(y,0.10), np.quantile(y,0.90)
+    ax.axvline(q10, color=c, ls="-",  lw=1.4)
+    ax.axvline(q90, color=c, ls="--", lw=1.4)
+    ax.text(q10, ax.get_ylim()[1]*0.0, f" q10={q10:.2f}", color=c,
+            rotation=90, va="bottom", ha="right", fontsize=8)
+ 
+ax.set_title("Distribution of Y by arm  (solid = q10 / lower bound, dashed = q90)")
+ax.set_xlabel("Y"); ax.set_ylabel("density"); ax.legend()
+fig.tight_layout()
+plt.show()
+
+# ---------------------------------------- COVERAGE SIMULATION ----------------------------------------
+
 # The coverage is with respect to the true fused quantiles of the outcome variable in the population.
 
 def build_split_interval(dat, ql, qu, split=True, split_seed=None):
@@ -286,9 +314,6 @@ def build_split_interval(dat, ql, qu, split=True, split_seed=None):
         l_fused = w1 * l1_eval + (1 - w1) * l2_eval
         u_fused = w2 * u1_eval + (1 - w2) * u2_eval
 
-        # l_fused = l_fused + BOUND_SHIFT
-        # u_fused = u_fused + BOUND_SHIFT
-
         lower, upper = compute_ci(
             l_fused, u_fused, w1, w2,
             var_l1_eval, var_u1_eval, var_l2_eval, var_u2_eval,
@@ -310,9 +335,6 @@ def build_split_interval(dat, ql, qu, split=True, split_seed=None):
         l_fused = w1 * l1 + (1 - w1) * l2
         u_fused = w2 * u1 + (1 - w2) * u2
 
-        # l_fused = l_fused + BOUND_SHIFT
-        # u_fused = u_fused + BOUND_SHIFT
-
         lower, upper = compute_ci(
             l_fused, u_fused, w1, w2,
             var_l1, var_u1, var_l2, var_u2,
@@ -322,7 +344,6 @@ def build_split_interval(dat, ql, qu, split=True, split_seed=None):
         "lower": lower,
         "upper": upper,
         "width": upper - lower,
-        # "shift": BOUND_SHIFT,
         "w1": w1,
         "w2": w2,
     }
@@ -330,11 +351,10 @@ def build_split_interval(dat, ql, qu, split=True, split_seed=None):
 coverage_mc = 1000
 coverage_rng = np.random.default_rng(7)
 coverage_rows = []
-ql, qu = 0.25, 0.75  # quantiles for the bounds
 
-def true_fused_quantiles(n=1_000_000, ql=0.25, qu=0.75):
+def true_fused_quantiles(n=1_000_000, ql=ql, qu=qu):
     """True fused quantiles of the outcome variable in a large sample population."""
-    d = simulate_dgp(n, rng=np.random.default_rng(1))
+    d = simulate_dgp(n, gamma_s=gamma_s, rng=np.random.default_rng(7))
     os_dat = d[d['S'] == 0]
     rct_dat = d[d['S'] == 1]
 
@@ -354,16 +374,51 @@ def true_fused_quantiles(n=1_000_000, ql=0.25, qu=0.75):
     l_fused = w1 * l1 + (1 - w1) * l2
     u_fused = w2 * u1 + (1 - w2) * u2
 
-    return l_fused, u_fused
+    l_int, u_int = np.maximum(l1, l2), np.minimum(u1, u2)
 
-true_l_fused, true_u_fused = true_fused_quantiles()
+    return l_fused, u_fused, l_int, u_int, w1, w2
+
+true_l_fused, true_u_fused, true_l_int, true_u_int, true_w1, true_w2 = true_fused_quantiles()
+
+# Interestingly, large sample approx fused quantiles is intersected quantiles
+print(f"\nTrue fused quantiles: {true_l_fused:.3f}, {true_u_fused:.3f}")
+print(f"True intersection quantiles: {true_l_int:.3f}, {true_u_int:.3f}")
+print(f"optimal weights: w1 = {true_w1:.3f}, w2 = {true_w2:.3f}")
 
 for _ in range(coverage_mc):
-    dat_mc = simulate_dgp(n, rng=coverage_rng)
+    dat_mc = simulate_dgp(n, gamma_s=gamma_s, rng=coverage_rng)
     split_seed = int(coverage_rng.integers(0, 2**32 - 1))
 
+    win_1 = np.maximum(dat_mc[dat_mc['S'] == 0]['Y'].quantile(ql), dat_mc[dat_mc['S'] == 1]['Y'].quantile(ql))
+    if win_1 == dat_mc[dat_mc['S'] == 0]['Y'].quantile(ql):
+        w1_int = 1.0
+    else:
+        w1_int = 0.0
+
+    win_2 = np.minimum(dat_mc[dat_mc['S'] == 0]['Y'].quantile(qu), dat_mc[dat_mc['S'] == 1]['Y'].quantile(qu))
+    if win_2 == dat_mc[dat_mc['S'] == 0]['Y'].quantile(qu):
+        w2_int = 1.0
+    else:
+        w2_int = 0.0
+
+    intersection_ci = compute_ci(
+        win_1, win_2,
+        w1_int, w2_int,
+        quantile_variance(dat_mc[dat_mc['S'] == 0]['Y'], ql),
+        quantile_variance(dat_mc[dat_mc['S'] == 0]['Y'], qu),
+        quantile_variance(dat_mc[dat_mc['S'] == 1]['Y'], ql),
+        quantile_variance(dat_mc[dat_mc['S'] == 1]['Y'], qu),
+    )
     split_ci = build_split_interval(dat_mc, ql, qu, split=True, split_seed=split_seed)
     nosplit_ci = build_split_interval(dat_mc, ql, qu, split=False)
+
+    coverage_rows.append({
+        "Method": "Intersection CI",
+        "Covered": int(intersection_ci[0] <= true_l_int and true_u_int <= intersection_ci[1]),
+        "Width": intersection_ci[1] - intersection_ci[0],
+        "w1": w1_int,
+        "w2": w2_int,
+    })
 
     coverage_rows.append({
         "Method": "Sample splitting CI",
@@ -381,6 +436,10 @@ for _ in range(coverage_mc):
     })
 
 coverage_table = pd.DataFrame(coverage_rows)
+def prop_interior(w, tol=1e-4):
+    """Proportion of weights strictly inside (0, 1) — i.e. a genuine convex mix."""
+    return np.mean((w > tol) & (w < 1 - tol))
+
 coverage_summary = (
     coverage_table.groupby("Method", as_index=False)
     .agg(
@@ -388,8 +447,11 @@ coverage_summary = (
         Avg_Width=("Width", "mean"),
         Mean_w1=("w1", "mean"),
         Mean_w2=("w2", "mean"),
+        Interior_w1=("w1", prop_interior),
+        Interior_w2=("w2", prop_interior),
     )
-    .rename(columns={"Avg_Width": "Avg Width", "Mean_w1": "Mean w1", "Mean_w2": "Mean w2"})
+    .rename(columns={"Avg_Width": "Avg Width", "Mean_w1": "Mean w1", "Mean_w2": "Mean w2",
+                     "Interior_w1": "Interior w1", "Interior_w2": "Interior w2"})
 )
 
 print(f"\nCoverage analysis over {coverage_mc} simulated datasets (target = {1 - alpha:.3f})")

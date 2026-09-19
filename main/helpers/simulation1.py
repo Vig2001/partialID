@@ -31,9 +31,9 @@ def simulate_dgp(n,
                                  #  the naive transported RCT estimate is
                                  #  biased UP -- the two bands then trim each
                                  #  other on opposite sides)
-                 delta_c=1.2,    # U_c -> outcome
+                 delta_c=1.2,    # U_c -> outcome (1.2)
                  beta_0=0.8,     # baseline treatment effect (log-odds)
-                 beta_m=1.4,     # effect modification by U_m
+                 beta_m=1.4,     # effect modification by U_m (1.4)
                  cont=True,      # Toggle for continuous outcome
                  sigma_y=1.0,    # Noise standard deviation if continuous
                  rng=rng):
@@ -53,7 +53,7 @@ def simulate_dgp(n,
     T = rng.binomial(1, e_true)
 
     # Base linear predictor
-    lin0 = -0.4 + 0.4 * X1 - 0.2 * X2 + delta_c * (U_c - 0.5)
+    lin0 = -0.4 + 0.4 * X1 - 0.2 * X2 + delta_c * (U_c - 0.5) #+ (beta_m +0.6) * U_m
 
     if cont:
         # --------------------------------------------------------------------
