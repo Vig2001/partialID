@@ -1,5 +1,14 @@
+# Python
 project1venv/
-.DS_Store
 __pycache__/
-partialID_Overleaf/
 *.pyc
+
+# macOS
+.DS_Store
+
+# LaTeX synced with Overleaf
+partialID_Overleaf/
+
+# Claude's local notes
+quality_reports/session_logs
+
