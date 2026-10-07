@@ -1,6 +1,6 @@
 ---
 name: referee
-description: Reads the full paper as a sceptical referee at a top statistics journal or ML/causal inference conference and writes a referee report. Use before sharing a draft or submitting.
+description: Reads the full paper as a sceptical referee at a top statistics journal or ML/causal inference conference and writes a referee report. Only use when the user explicitly asks for this agent.
 tools: Read, Grep, Glob
 model: opus
 ---

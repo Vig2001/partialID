@@ -1,6 +1,6 @@
 ---
 name: code-reviewer
-description: Reviews analysis code for bugs, reproducibility, and agreement with the paper. Use after changing files in main/.
+description: Reviews analysis code for bugs, reproducibility, and agreement with the paper. Use after changing files in main/ or any other .py, .R, .ipynb, .Rmd files.
 tools: Read, Grep, Glob
 model: sonnet
 ---

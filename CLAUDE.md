@@ -10,6 +10,7 @@ Point identification (ID) of causal estimands rely on certain strong, untestable
 - **Everything the paper uses lives inside `partialID_Overleaf/`:** figures, tables and `.bib`, or Overleaf can't see them.
 - **Numbers come from code:** never type a result into the paper by hand; it must trace to code in `main/` and the file that code wrote.
 - **Learn from corrections:** when I correct you, add a one-line entry under Corrections below.
+- **Log before leaving:** when I say let's wrap up or summarise the day run /session-log before anything else.
 
 ## Folder structure
 
