@@ -11,4 +11,5 @@ partialID_Overleaf/
 
 # Claude's local notes
 quality_reports/session_logs
+.claude/settings.local.json
 
