@@ -6,7 +6,7 @@ Point identification (ID) of causal estimands rely on certain strong, untestable
 
 - **Plan first:** for non-trivial tasks, present a plan and wait for my approval. Save approved plans to `quality_reports/plans/YYYY-MM-DD_short-name.md`.
 - **Verify after:** after changing a `.tex` file, compile it and check the log for errors, undefined references and missing citations. After changing code, run it and check the output before saying it is done.
-- **Paper and Notes is a separate repo:** `partialID_Overleaf/` syncs with Overleaf. Commit and push paper changes from inside that folder; never add it to the projectone repo.
+- **Paper and Notes is a separate repo:** `partialID_Overleaf/` syncs with Overleaf. Commit and push paper changes from inside that folder; never add it to the projectone repo. The main file is given by `partialID_Overleaf/compiled.tex` which calls different sections.
 - **Everything the paper uses lives inside `partialID_Overleaf/`:** figures, tables and `.bib`, or Overleaf can't see them.
 - **Numbers come from code:** never type a result into the paper by hand; it must trace to code in `main/` and the file that code wrote.
 - **Learn from corrections:** when I correct you, add a one-line entry under Corrections below.
@@ -19,8 +19,11 @@ Point identification (ID) of causal estimands rely on certain strong, untestable
 - `intuition/`: Initial python code for understanding current methods - will rarely touch
 - `project1venv/`: virtual environment (never edit)
 - `slides/`: Beamer talks, one folder each, sharing `slides/preamble.tex`
-- `partialID_Overleaf/`: the paper (main file `[main.tex]`)
+- `partialID_Overleaf/`: the paper (the main file `compiled.tex`)
 - `quality_reports/`: plans, session logs, review reports
+
+Note: settings.json blocks reading private_data/ (for future data-use agreements), if using open source data
+will need to store in a separate public_data folder.
 
 ## Commands
 
@@ -36,7 +39,6 @@ Point identification (ID) of causal estimands rely on certain strong, untestable
 - Spelling: British English
 
 ## Current state
-
 
 - Methods: Proposed convex combination method which I am stress-testing and proving theorems
 - Simulations: just started

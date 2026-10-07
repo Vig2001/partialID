@@ -1,0 +1,6 @@
+{
+  "plansDirectory": "quality_reports/plans",
+  "permissions": {
+    "deny": ["Read(./private_data/**)"]
+  }
+}
