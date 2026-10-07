@@ -1,4 +1,4 @@
-"""Toy example to compare the width and covverage
+"""Toy example to compare the width and coverage
 of the convex combination CI and the naive intersection CI.
 For simplicity we assume that we have access to the true variances 
 of the bounds from the OS and RCT. i.e. we know the true variances and means"""
@@ -70,6 +70,9 @@ for _ in range(n_mc):
     L2 = np.random.normal(1.0, np.sqrt(var_L2))
     U2 = np.random.normal(7.0, np.sqrt(var_U2))
 
+    if _ == 1:
+        print(L1, U1, L2, U2)
+
     # Compute the intersection bounds
     L_intersection = max(L1, L2)
     U_intersection = min(U1, U2)
@@ -91,8 +94,16 @@ for _ in range(n_mc):
     w1_opt = get_omega1()
     w2_opt = get_omega2()
 
-    L_fused = w1_opt * L1 + (1 - w1_opt) * L2
-    U_fused = w2_opt * U1 + (1 - w2_opt) * U2
+    L1_new = np.random.normal(0.5, np.sqrt(var1))
+    U1_new = np.random.normal(5.5, np.sqrt(var_U1))
+    L2_new = np.random.normal(1.0, np.sqrt(var_L2))
+    U2_new = np.random.normal(7.0, np.sqrt(var_U2))
+
+    if _ == 1:
+        print(L1_new, U1_new, L2_new, U2_new)
+
+    L_fused = w1_opt * L1_new + (1 - w1_opt) * L2_new
+    U_fused = w2_opt * U1_new + (1 - w2_opt) * U2_new
 
     # Compute the confidence intervals for the convex combination
     lower_convex, upper_convex = compute_ci(L_fused, U_fused, w1_opt, w2_opt)
