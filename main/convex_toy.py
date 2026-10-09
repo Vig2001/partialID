@@ -6,8 +6,8 @@ of the bounds from the OS and RCT. i.e. we know the true variances and means"""
 import numpy as np
 import pandas as pd
 from scipy.stats import norm, gaussian_kde
-from scipy.optimize import minimize_scalar
 from helpers.simulation1 import simulate_dgp
+from helpers.weight_optimisers import optimal_omega_lower, optimal_omega_upper
 import matplotlib.pyplot as plt
 np.random.seed(7)
 
@@ -29,36 +29,6 @@ def compute_ci(Lf, Uf, w1, w2,
     lower_ci = Lf - 1.96 * np.sqrt(w1**2 * var_L1 + (1 - w1)**2 * var_L2)
     upper_ci = Uf + 1.96 * np.sqrt(w2**2 * var_U1 + (1 - w2)**2 * var_U2)
     return lower_ci, upper_ci
-
-def get_omega1(mu_cnf=0.5, mu_tpt=1.0, var_cnf=0.1**2, var_tpt=0.7**2, z=1.96):
-    """
-    Finds the optimal weight w in [0,1] to MAXIMIZE the expected lower bound.
-    """
-    def objective(w):
-        # Expected value of the combined lower bound
-        expected_mean = w * mu_cnf + (1 - w) * mu_tpt
-        # Standard error for CI construction
-        penalty = z * np.sqrt((w**2 * var_cnf) + ((1 - w)**2 * var_tpt))
-        expected_lower_bound = expected_mean - penalty
-        # maximise = minimise the negative
-        return -expected_lower_bound
-    # add [0,1] constrains
-    result = minimize_scalar(objective, bounds=(0, 1), method='bounded')
-    
-    return result.x
-
-def get_omega2(mu_cnf=0.5, mu_tpt=1.0, var_cnf=0.1**2, var_tpt=0.7**2, z=1.96):
-    """
-    Finds the optimal weight w in [0,1] to MINIMIZE the expected upper bound.
-    """
-    def objective(w):
-        expected_mean = w * mu_cnf + (1 - w) * mu_tpt
-        penalty = z * np.sqrt((w**2 * var_cnf) + ((1 - w)**2 * var_tpt))
-        expected_upper_bound = expected_mean + penalty
-        return expected_upper_bound
-    
-    result = minimize_scalar(objective, bounds=(0, 1), method='bounded')
-    return result.x
 
 coverage_rows = []
 
@@ -91,8 +61,8 @@ for _ in range(n_mc):
     lower_intersection, upper_intersection = compute_ci(L_intersection, U_intersection, w1, w2)
 
     # Find the optimal weights for the convex combination
-    w1_opt = get_omega1()
-    w2_opt = get_omega2()
+    w1_opt = optimal_omega_lower(0.5, 1.0, 0.1**2, 0.7**2)
+    w2_opt = optimal_omega_upper(0.5, 1.0, 0.1**2, 0.7**2)
 
     L1_new = np.random.normal(0.5, np.sqrt(var1))
     U1_new = np.random.normal(5.5, np.sqrt(var_U1))

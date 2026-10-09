@@ -18,8 +18,8 @@ coverage of our sample splitting method - maybe loss in efficiency from sample s
 import numpy as np
 import pandas as pd
 from scipy.stats import norm, gaussian_kde
-from scipy.optimize import minimize_scalar
 from helpers.simulation1 import simulate_dgp
+from helpers.weight_optimisers import optimal_omega_lower, optimal_omega_upper
 import matplotlib.pyplot as plt
 np.random.seed(7)
 
@@ -153,39 +153,9 @@ var_U1_split = quantile_variance(OS_dat1['Y'], qu)
 var_L2_split = quantile_variance(RCT_dat1['Y'], ql)
 var_U2_split = quantile_variance(RCT_dat1['Y'], qu)
 
-def get_omega1(mu_cnf, mu_tpt, var_cnf, var_tpt, z=1.96):
-    """
-    Finds the optimal weight w in [0,1] to MAXIMIZE the expected lower bound.
-    """
-    def objective(w):
-        # Expected value of the combined lower bound
-        expected_mean = w * mu_cnf + (1 - w) * mu_tpt
-        # Standard error for CI construction
-        penalty = z * np.sqrt((w**2 * var_cnf) + ((1 - w)**2 * var_tpt))
-        expected_lower_bound = expected_mean - penalty
-        # maximise = minimise the negative
-        return -expected_lower_bound
-    # add [0,1] constrains
-    result = minimize_scalar(objective, bounds=(0, 1), method='bounded')
-    
-    return result.x
-
-def get_omega2(mu_cnf, mu_tpt, var_cnf, var_tpt, z=1.96):
-    """
-    Finds the optimal weight w in [0,1] to MINIMIZE the expected upper bound.
-    """
-    def objective(w):
-        expected_mean = w * mu_cnf + (1 - w) * mu_tpt
-        penalty = z * np.sqrt((w**2 * var_cnf) + ((1 - w)**2 * var_tpt))
-        expected_upper_bound = expected_mean + penalty
-        return expected_upper_bound
-    
-    result = minimize_scalar(objective, bounds=(0, 1), method='bounded')
-    return result.x
-
 # find optmal weights using the first half of the data
-optim_w1 = get_omega1(L1_split, L2_split, var_L1_split, var_L2_split)
-optim_w2 = get_omega2(U1_split, U2_split, var_U1_split, var_U2_split)
+optim_w1 = optimal_omega_lower(L1_split, L2_split, var_L1_split, var_L2_split)
+optim_w2 = optimal_omega_upper(U1_split, U2_split, var_U1_split, var_U2_split)
 
 # estimate on split 2
 L1_split2 = OS_dat2['Y'].quantile(ql)
@@ -223,8 +193,8 @@ var_U1_nosplit = quantile_variance(OS_dat['Y'], qu)
 var_L2_nosplit = quantile_variance(RCT_dat['Y'], ql)
 var_U2_nosplit = quantile_variance(RCT_dat['Y'], qu)
 
-nosplit_w1 = get_omega1(L1_nosplit, L2_nosplit, var_L1_nosplit, var_L2_nosplit)
-nosplit_w2 = get_omega2(U1_nosplit, U2_nosplit, var_U1_nosplit, var_U2_nosplit)
+nosplit_w1 = optimal_omega_lower(L1_nosplit, L2_nosplit, var_L1_nosplit, var_L2_nosplit)
+nosplit_w2 = optimal_omega_upper(U1_nosplit, U2_nosplit, var_U1_nosplit, var_U2_nosplit)
 
 L_fused_nosplit = nosplit_w1 * L1_nosplit + (1 - nosplit_w1) * L2_nosplit
 U_fused_nosplit = nosplit_w2 * U1_nosplit + (1 - nosplit_w2) * U2_nosplit
@@ -298,8 +268,8 @@ def build_split_interval(dat, ql, qu, split=True, split_seed=None):
         var_l2 = quantile_variance(rct_dat1['Y'], ql)
         var_u2 = quantile_variance(rct_dat1['Y'], qu)
 
-        w1 = get_omega1(l1, l2, var_l1, var_l2)
-        w2 = get_omega2(u1, u2, var_u1, var_u2)
+        w1 = optimal_omega_lower(l1, l2, var_l1, var_l2)
+        w2 = optimal_omega_upper(u1, u2, var_u1, var_u2)
 
         l1_eval = os_dat2['Y'].quantile(ql)
         u1_eval = os_dat2['Y'].quantile(qu)
@@ -329,8 +299,8 @@ def build_split_interval(dat, ql, qu, split=True, split_seed=None):
         var_l2 = quantile_variance(rct_dat['Y'], ql)
         var_u2 = quantile_variance(rct_dat['Y'], qu)
 
-        w1 = get_omega1(l1, l2, var_l1, var_l2)
-        w2 = get_omega2(u1, u2, var_u1, var_u2)
+        w1 = optimal_omega_lower(l1, l2, var_l1, var_l2)
+        w2 = optimal_omega_upper(u1, u2, var_u1, var_u2)
 
         l_fused = w1 * l1 + (1 - w1) * l2
         u_fused = w2 * u1 + (1 - w2) * u2
@@ -368,8 +338,8 @@ def true_fused_quantiles(n=1_000_000, ql=ql, qu=qu):
     var_l2 = quantile_variance(rct_dat['Y'], ql)
     var_u2 = quantile_variance(rct_dat['Y'], qu)
 
-    w1 = get_omega1(l1, l2, var_l1, var_l2)
-    w2 = get_omega2(u1, u2, var_u1, var_u2)
+    w1 = optimal_omega_lower(l1, l2, var_l1, var_l2)
+    w2 = optimal_omega_upper(u1, u2, var_u1, var_u2)
 
     l_fused = w1 * l1 + (1 - w1) * l2
     u_fused = w2 * u1 + (1 - w2) * u2

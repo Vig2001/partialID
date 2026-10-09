@@ -15,8 +15,9 @@ Point identification (ID) of causal estimands rely on certain strong, untestable
 ## Folder structure
 
 - `main/`: Python code for main project. Convention: `*_methods.py` involves published causal sensitivity methods, `*_demo.py` and `*_toy.py` are toy examples with nothing causal about them.
-    - `convex_methods.py` + `convex_demo.py` + `convex_toy.py`; `initial_methods.py` + `initial_demo.py`
-    - `helpers/`: shared utilities for code; `plotting/`: shared utilites for plottings
+    - `convex_methods.py` + `convex_demo.py` + `convex_toy.py`; `initial_methods.py` + `initial_demo.py`; `band_toy.py`
+    - `helpers/`: shared utilities for code (convex-combination weights in `helpers/weight_optimisers.py`); `plotting/`: shared utilites for plottings
+    - `outputs/`: results and figures written by scripts, one folder per script (e.g. `outputs/band_toy/`)
 - `intuition/`: Initial python code for understanding current methods - will rarely touch
 - `project1venv/`: virtual environment (never edit)
 - `slides/`: Beamer talks, one folder each, sharing `slides/preamble.tex`
@@ -42,7 +43,7 @@ will need to store in a separate public_data folder.
 ## Current state
 
 - Methods: Proposed convex combination method which I am stress-testing and proving theorems
-- Simulations: just started
+- Simulations: `band_toy.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `main/outputs/band_toy/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like.
 
 ## Skills
 
@@ -61,3 +62,4 @@ will need to store in a separate public_data folder.
 ## Corrections
 
 <!-- Claude adds entries here, e.g. "Use \citet not \cite for in-text citations" -->
+- Don't call a valid CI "wider" or "rarely narrower" than one that undercovers; width comparisons only make sense between methods with valid coverage.

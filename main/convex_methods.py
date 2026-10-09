@@ -15,15 +15,15 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.stats import norm, probplot
-from scipy.optimize import minimize_scalar
 import time
 
 from initial_demo import simulate_dgp, true_tau_S0
 from helpers.optimisers import (pseudo_true_grid,
                                 fit_zsb_components, fit_niw_components,
                                 zsb_from_components, niw_from_components, 
-                                fit_components_ok)
+                                fit_components_boot)
 from helpers.boot_funcs import horowitz_manski_ci
+from helpers.weight_optimisers import optimal_omega_lower, optimal_omega_upper
 from plotting.visualisations import plot_hist_with_gaussian, plot_qq
 
 # ----------------------------- Required Functions ------------------------------
@@ -37,29 +37,11 @@ def boot_single_pair(dat, Lam, Gam, B, rng):
     Ln = np.empty(B); Un = np.empty(B)
     
     for b in range(B):
-        cz, cn = fit_components_ok(dat, rng)
+        cz, cn = fit_components_boot(dat, rng)
         Lz[b], Uz[b] = zsb_from_components(cz, Lam)
         Ln[b], Un[b] = niw_from_components(cn, Gam)
         
     return Lz, Uz, Ln, Un
-
-def get_optimal_omega_lower(mu_z, mu_n, var_z, var_n, z=1.96):
-    """Finds optimal weight w in [0,1] to MAXIMIZE the expected lower bound."""
-    def objective(w):
-        exp_mean = w * mu_z + (1 - w) * mu_n
-        penalty = z * np.sqrt(w**2 * var_z + (1 - w)**2 * var_n)
-        return -(exp_mean - penalty) # Minimize the negative to maximize
-    res = minimize_scalar(objective, bounds=(0, 1), method='bounded')
-    return res.x
-
-def get_optimal_omega_upper(mu_z, mu_n, var_z, var_n, z=1.96):
-    """Finds optimal weight w in [0,1] to MINIMIZE the expected upper bound."""
-    def objective(w):
-        exp_mean = w * mu_z + (1 - w) * mu_n
-        penalty = z * np.sqrt(w**2 * var_z + (1 - w)**2 * var_n)
-        return exp_mean + penalty 
-    res = minimize_scalar(objective, bounds=(0, 1), method='bounded')
-    return res.x
 
 # ----------------------------- configuration ------------------------------
 SEED     = 7
@@ -215,8 +197,8 @@ def run():
         var_Un_A = np.var(Un_A)
         
         # 4. Find the mathematically optimal weights
-        opt_w_L = get_optimal_omega_lower(zpt_lo_A, npt_lo_A, var_Lz_A, var_Ln_A)
-        opt_w_U = get_optimal_omega_upper(zpt_hi_A, npt_hi_A, var_Uz_A, var_Un_A)
+        opt_w_L = optimal_omega_lower(zpt_lo_A, npt_lo_A, var_Lz_A, var_Ln_A)
+        opt_w_U = optimal_omega_upper(zpt_hi_A, npt_hi_A, var_Uz_A, var_Un_A)
         
         # Record the weights chosen for this iteration
         optimal_split_dict["w_L_used"].append(opt_w_L)

@@ -35,8 +35,6 @@
 
 import numpy as np
 import pandas as pd
-from sklearn.linear_model import LogisticRegression
-import matplotlib
 
 #matplotlib.use("Agg")
 import matplotlib.pyplot as plt
