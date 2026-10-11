@@ -1,7 +1,7 @@
 ---
 name: simulation-study
-description: Run a Monte Carlo simulation from main/ and check coverage, bias, interval width and Monte Carlo error against what the paper claims.
-argument-hint: "[script in main/, plus any settings]"
+description: Run a Monte Carlo simulation from src/ and check coverage, bias, interval width and Monte Carlo error against what the paper claims.
+argument-hint: "[script in src/, plus any settings]"
 ---
 
 1. Target: $ARGUMENTS. If the script or settings are unclear, ask before running.

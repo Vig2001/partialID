@@ -18,8 +18,8 @@ coverage of our sample splitting method - maybe loss in efficiency from sample s
 import numpy as np
 import pandas as pd
 from scipy.stats import norm, gaussian_kde
-from helpers.simulation1 import simulate_dgp
-from helpers.weight_optimisers import optimal_omega_lower, optimal_omega_upper
+from src.helpers.simulation1 import simulate_dgp
+from src.helpers.weight_optimisers import optimal_omega_lower, optimal_omega_upper
 import matplotlib.pyplot as plt
 np.random.seed(7)
 

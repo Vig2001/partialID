@@ -6,7 +6,7 @@ the true band. We compare the naive intersection CI with the convex combination 
 (oracle weights, sample-split weights, plug-in weights without splitting).
 
 Plan: quality_reports/plans/2026-10-09_band-toy-simulation.md
-Outputs: main/outputs/band_toy/
+Outputs: src/outputs/band_toy/
 """
 
 import itertools

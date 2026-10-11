@@ -19,7 +19,7 @@ band that is wider than the truth; together they identify exactly the true band.
 | α, z | 0.05, z = Φ⁻¹(1 − α/2) = 1.96 per side | Bonferroni, joint coverage ≥ 0.95 |
 | n_1, n_2 | 2000, 500 | Dataset sizes |
 | f | 0.3 | Fold-A fraction: n^A = (600, 150), n^B = (1400, 350) |
-| R | 5000 | MC replicates per cell |
+| R | 5000 | MC replicates per cell (i.e. combination of above params) |
 | Seed | 7 | Same data used by all methods within a replicate |
 
 ## 2. Scenario grid

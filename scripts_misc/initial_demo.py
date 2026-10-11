@@ -41,8 +41,8 @@ import matplotlib.pyplot as plt
 
 rng = np.random.default_rng(7)
 
-from helpers.simulation1 import simulate_dgp, true_tau_S0
-from helpers.optimisers import zsb_bounds, niw_bounds, fuse_bounds
+from src.helpers.simulation1 import simulate_dgp, true_tau_S0
+from src.helpers.optimisers import zsb_bounds, niw_bounds, fuse_bounds
 
 # ----------------------------------------------------------------------------
 # Demo

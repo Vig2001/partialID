@@ -7,7 +7,7 @@ description: Full review of the paper using the proofreader, methods-reviewer an
    - proofreader
    - methods-reviewer
    - referee
-   If files in main/ changed since the last review, also run code-reviewer.
+   If files in src/ changed since the last review, also run code-reviewer.
 2. Merge their findings into one report. Remove duplicates. Order: Critical, then Major, then Minor. Tag each item with which reviewer raised it.
 3. Save to quality_reports/reviews/YYYY-MM-DD_full-review.md.
 4. Show me the top 5 issues and the referee's likely objections.

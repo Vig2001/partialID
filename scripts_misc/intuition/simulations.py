@@ -2,8 +2,8 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
-from confounding_models import BaseConfoundingModel, LinearModel, NonlinearFeaturesModel
-from confounding_models import ComplexNonlinearModel, GammaConfoundingModel, LocalisedGammaModel
+from scripts_misc.intuition.confounding_models import BaseConfoundingModel, LinearModel, NonlinearFeaturesModel
+from scripts_misc.intuition.confounding_models import ComplexNonlinearModel, GammaConfoundingModel, LocalisedGammaModel
 
 gamma_uy_list = [-2.0, -1.0, 1.0]  # Effect of U on the Outcome
 gamma_ut_list = [0.0, 2.0, 4.0]    # Effect of U on Treatment Selection
