@@ -44,6 +44,7 @@ will need to store in a separate public_data folder.
 
 - Methods: Proposed convex combination method which I am stress-testing and proving theorems
 - Simulations: `band_toy.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/band_toy/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like.
+- Code follows AGENTS.md: CIs in `src/helpers/ci_methods.py`, MC summaries in `src/helpers/mc_metrics.py`, plots in `src/plotting/band_toy_plots.py`; run with `python -m src.band_toy`. No `tests/` yet.
 
 ## Skills
 
