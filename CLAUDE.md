@@ -31,7 +31,7 @@ will need to store in a separate public_data folder.
 
 - Compile paper: `cd partialID_Overleaf && latexmk -pdf compiled.tex` (use `-xelatex` if Overleaf uses XeLaTeX)
 - Python: activate with `source project1venv/bin/activate`; dependencies in `requirements.txt`
-- Run analysis: `python src/[script].py`
+- Run analysis: `python -m src.[script]` from the repo root (`src` is installed editable in `project1venv`)
 - Bibliography: `partialID_Overleaf/[references.bib]`
 
 ## Paper conventions
