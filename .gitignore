@@ -13,3 +13,15 @@ partialID_Overleaf/
 quality_reports/session_logs
 .claude/settings.local.json
 
+# Packaging / editable install metadata
+*.egg-info/
+build/
+dist/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Heavy results (regenerate from code)
+src/outputs/**/*.pkl
+src/outputs/**/*.npy
+src/outputs/**/*.npz

@@ -7,4 +7,25 @@
 Note: settings.json blocks Claude reading private_data/ (for future data-use agreements), if using open source data will need to store in a separate public_data folder.
 
 ### Setup
-Install dependencies: `pip install -r requirements.txt`
+From the repo root, create the project environment, install the pinned dependencies, then install `src/` in editable mode into that environment:
+
+```
+python -m venv project1venv
+source project1venv/bin/activate
+python -m pip install -r requirements.txt
+project1venv/bin/python -m pip install -e .
+```
+
+### Layout
+- `src/band_toy.py`: known-true-band toy comparing the intersection CI with the convex combination CI.
+- `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights, plus older DGP/bound helpers).
+- `src/plotting/`: figure code (`band_toy_plots.py` for the toy).
+- `src/outputs/<script>/`: results and figures written by each script.
+
+### Running
+Run entry scripts as modules from the repo root with the environment active, e.g.
+
+```
+python -m src.band_toy            # defaults: --seed 7 --reps 5000 --frac-a 0.3
+python -m src.band_toy --help     # all options
+```

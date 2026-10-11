@@ -1,0 +1,15 @@
+# Makes src/ an installable package so code imports `from src.helpers import ...`.
+# Install once, into the project venv: project1venv/bin/python -m pip install -e .
+# Dependencies are pinned in requirements.txt.
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "projectone"
+version = "0.1.0"
+requires-python = ">=3.13"
+
+[tool.setuptools.packages.find]
+include = ["src", "src.*"]
