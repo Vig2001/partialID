@@ -28,7 +28,7 @@ Topic: $ARGUMENTS. Ask me:
 
 ## Phase 1: Pre-flight report
 
-Read the relevant paper sections, partialID_Overleaf/Slides/preamble.tex, and the most recent earlier talk in partialID_Overleaf/Slides/ if there is one. Then report:
+Read the relevant paper sections, partialID_Overleaf/Slides/preamble.tex, and the most recent earlier talk in partialID_Overleaf/Slides/<talk-folder>/ if there is one. Then report:
 
 - Sources read: one line per section or file on what it contributes
 - Notation: symbols the talk will use (as in the paper), any new ones, and any clashes with the paper or earlier talks
@@ -43,14 +43,23 @@ Propose the frame titles, about one slide per minute. For each figure or result,
 
 ## Phase 3: Build in batches
 
-1. Create partialID_Overleaf/Slides/YYYY-MM_<short-name>.tex directly in Slides/ (not a subfolder), starting with:
+1. Every talk gets its own folder: create partialID_Overleaf/Slides/YYYY-MM_<short-name>/YYYY-MM_<short-name>.tex, starting with:
    \documentclass[aspectratio=169]{beamer}
-   \input{preamble.tex}
+   \input{../preamble.tex}
+   Folder layout:
+   ```
+   Slides/
+   ├── beamerthemeUCL.sty, preamble.tex, ucl-logo_*.png   # shared; never move
+   └── YYYY-MM_<short-name>/                              # one folder per talk
+       ├── YYYY-MM_<short-name>.tex
+       └── (talk-specific images and build files)
+   ```
+   preamble.tex makes the theme and logos in Slides/ findable from the talk folder and loads ../../references.bib, so don't copy shared files into the talk folder.
 2. Title slide: \begin{frame}[plain]\titlepage\end{frame}. Section dividers are added automatically by \section{}.
    For a run of dark slides, wrap the frames in \begin{darkframes} ... \end{darkframes}.
-3. Reuse figures from partialID_Overleaf/Figures/ via relative paths (../Figures/...) rather than copying them. Match capitalisation exactly; Overleaf is case-sensitive.
+3. Reuse figures from partialID_Overleaf/Figures/ via relative paths (../../Figures/...) rather than copying them. Match capitalisation exactly; Overleaf is case-sensitive.
 4. Prefer one equation or figure per slide over bullet lists.
-5. Write 5–10 frames, compile with latexmk -pdf (or -xelatex if the talk uses UCL Sans), and show me that batch's frame titles and any issues. Wait for feedback before the next batch.
+5. Write 5–10 frames, compile from inside the talk folder with latexmk -pdf (or -lualatex if the talk uses UCL Sans; the opacity fading in preamble.tex does not work under XeLaTeX), and show me that batch's frame titles and any issues. Wait for feedback before the next batch.
 
 ## Phase 4: Polish and audit
 

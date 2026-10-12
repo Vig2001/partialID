@@ -21,7 +21,7 @@ Point identification (ID) of causal estimands rely on certain strong, untestable
 - `scripts_misc/`: old rough working and exploration (old convex/initial scripts, `intuition/`, `figures/`). Not the source of truth: don't edit, import from, or review it unless I ask
 - `project1venv/`: virtual environment (never edit)
 - `partialID_Overleaf/`: the paper (the output pdf file `compiled.tex`)
-- `partialID_Overleaf/Slides/`: Beamer talks, one `.tex` each, using the UCL theme (`beamerthemeUCL.sty`) via `preamble.tex` (unless specified otherwise)
+- `partialID_Overleaf/Slides/`: Beamer talks, one folder per talk (`Slides/YYYY-MM_<name>/YYYY-MM_<name>.tex`), using the shared UCL theme (`beamerthemeUCL.sty`) and `preamble.tex` in `Slides/` via `\input{../preamble.tex}` (unless specified otherwise)
 - `quality_reports/`: plans, session logs, review reports
 
 Note: settings.json blocks reading private_data/ (for future data-use agreements), if using open source data
@@ -43,7 +43,7 @@ will need to store in a separate public_data folder.
 ## Current state
 
 - Methods: Proposed convex combination method which I am stress-testing and proving theorems
-- Simulations: `band_toy.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/band_toy/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like.
+- Simulations: `band_toy.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/band_toy/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like. Slide versions of the toy figures and the width table come from `python -m src.band_toy_slide_figs` (reads `results.csv`, no new simulation); copies with provenance live in `partialID_Overleaf/Figures/band_toy/` and `Tables/band_toy/`.
 - Code follows AGENTS.md: CIs in `src/helpers/ci_methods.py`, MC summaries in `src/helpers/mc_metrics.py`, plots in `src/plotting/band_toy_plots.py`; run with `python -m src.band_toy`. No `tests/` yet.
 
 ## Skills
@@ -64,3 +64,4 @@ will need to store in a separate public_data folder.
 
 <!-- Claude adds entries here, e.g. "Use \citet not \cite for in-text citations" -->
 - Don't call a valid CI "wider" or "rarely narrower" than one that undercovers; width comparisons only make sense between methods with valid coverage.
+- Each new talk gets its own folder inside `Slides/`; never put a talk's `.tex` directly in `Slides/`.
