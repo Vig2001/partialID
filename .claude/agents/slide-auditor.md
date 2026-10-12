@@ -14,6 +14,7 @@ Check each frame:
 4. Notation: symbols match partialID_Overleaf/ exactly; anything new is defined before use
 5. Accuracy: every result, number and theorem matches the paper; flag anything not found there
 6. Figures: legible at presentation size, axes labelled
+7. Theme: uses the UCL theme's colours and blocks (unless specified otherwise); no custom colours or edits to beamerthemeUCL.sty
 
 Also check the deck as a whole: does the storyline build to one main message, and is the length right for the talk time (about one slide per minute)?
 

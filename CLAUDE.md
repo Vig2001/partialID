@@ -21,7 +21,7 @@ Point identification (ID) of causal estimands rely on certain strong, untestable
 - `scripts_misc/`: old rough working and exploration (old convex/initial scripts, `intuition/`, `figures/`). Not the source of truth: don't edit, import from, or review it unless I ask
 - `project1venv/`: virtual environment (never edit)
 - `partialID_Overleaf/`: the paper (the output pdf file `compiled.tex`)
-- `partialID_Overleaf/Slides`: slides for talks and presentations
+- `partialID_Overleaf/Slides/`: Beamer talks, one `.tex` each, using the UCL theme (`beamerthemeUCL.sty`) via `preamble.tex` (unless specified otherwise)
 - `quality_reports/`: plans, session logs, review reports
 
 Note: settings.json blocks reading private_data/ (for future data-use agreements), if using open source data
