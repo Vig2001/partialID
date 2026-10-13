@@ -3,7 +3,7 @@
 Does not rerun the simulation: run `python -m src.band_toy` first.
 
 Usage, from the repo root:
-    python -m src.band_toy_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
+    python -m src.latex.band_toy_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
 Outputs, in src/outputs/band_toy/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, intersection vs split
     width_coverage_small_gaps.tex       table rows for the width slide
@@ -107,7 +107,7 @@ def main() -> None:
     plot_joint_coverage(df, args.ratio, cfg, fig_path)
     table_path = out_dir / "width_coverage_small_gaps.tex"
     table_path.write_text(
-        "% Written by python -m src.band_toy_slide_figs from results.csv\n"
+        "% Written by python -m src.latex.band_toy_slide_figs from results.csv\n"
         + width_table_rows(df, args.table_gaps, cfg)
     )
     print(f"Written to {fig_path}\nWritten to {table_path}")

@@ -16,7 +16,7 @@ Point identification (ID) of causal estimands rely on certain strong, untestable
 ## Folder structure
 
 - `src/`: the current main codebase. Current methods and toy examples (`band_toy.py`).
-    - `helpers/`: functions for code; `plotting/`: functions for plotting
+    - `helpers/`: functions for code; `plotting/`: functions for plotting; `latex/`: scripts that write slide/paper figures and tables (e.g. `band_toy_slide_figs.py`)
     - `outputs/`: results and figures written by scripts, one folder per script (e.g. `outputs/band_toy/`)
 - `scripts_misc/`: old rough working and exploration (old convex/initial scripts, `intuition/`, `figures/`). Not the source of truth: don't edit, import from, or review it unless I ask
 - `project1venv/`: virtual environment (never edit)
@@ -43,7 +43,7 @@ will need to store in a separate public_data folder.
 ## Current state
 
 - Methods: Proposed convex combination method which I am stress-testing and proving theorems
-- Simulations: `band_toy.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/band_toy/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like. Slide versions of the toy figures and the width table come from `python -m src.band_toy_slide_figs` (reads `results.csv`, no new simulation); copies with provenance live in `partialID_Overleaf/Figures/band_toy/` and `Tables/band_toy/`.
+- Simulations: `band_toy.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/band_toy/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like. Slide versions of the toy figures and the width table come from `python -m src.latex.band_toy_slide_figs` (reads `results.csv`, no new simulation); copies with provenance live in `partialID_Overleaf/Figures/band_toy/` and `Tables/band_toy/`.
 - Code follows AGENTS.md: CIs in `src/helpers/ci_methods.py`, MC summaries in `src/helpers/mc_metrics.py`, plots in `src/plotting/band_toy_plots.py`; run with `python -m src.band_toy`. No `tests/` yet.
 
 ## Skills
