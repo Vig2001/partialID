@@ -65,3 +65,5 @@ will need to store in a separate public_data folder.
 <!-- Claude adds entries here, e.g. "Use \citet not \cite for in-text citations" -->
 - Don't call a valid CI "wider" or "rarely narrower" than one that undercovers; width comparisons only make sense between methods with valid coverage.
 - Each new talk gets its own folder inside `Slides/`; never put a talk's `.tex` directly in `Slides/`.
+- Respect each section's stated assumptions: in the known-variance Gaussian section, never suggest replacing $\sigma_k^2$ with an estimate.
+- In the paper use the Methods notation, not code names: weights $\omega_0$ (lower) and $\omega_1$ (upper), oracle $\omega^{\star}$, population bounds $L_k, U_k$ (not `w_L`, `w_U`, $L^*_k$).
