@@ -6,7 +6,7 @@ Usage, from the repo root:
     python -m src.latex.band_toy_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
         [--table-ratios 1 2 5] [--with-calibrated]
 Outputs, in src/outputs/band_toy/:
-    joint_coverage_r<ratio>_slides.png  coverage heatmaps, intersection vs split
+    joint_coverage_r<ratio>_slides.png  coverage heatmaps, naive intersection vs split
     width_coverage_small_gaps.tex       table rows for the width slide, or
     width_coverage_small_gaps_calibrated.tex  with an M6 column after M1
 """
@@ -33,7 +33,7 @@ UNDERCOVER_SES = 2  # flag coverage this many MC s.e. below nominal
 def plot_joint_coverage(
     df: pd.DataFrame, ratio: float, cfg: band_toy.ToyConfig, out_path: Path
 ) -> None:
-    """Joint coverage heatmaps for the intersection and split convex CIs.
+    """Joint coverage heatmaps for the naive intersection and split CIs.
 
     Coverage is shown in percent (89.8 rather than 0.898) so the values fit
     the cells at a legible size.
@@ -43,7 +43,7 @@ def plot_joint_coverage(
         100 * band_toy_plots.pivot_cells(df, m, ratio, "cov_joint", cfg.gaps)
         for m in methods
     ]
-    titles = [f"Intersection, r = {ratio:g}", f"Convex (split), r = {ratio:g}"]
+    titles = [f"Naive intersection, r = {ratio:g}", f"Convex (split), r = {ratio:g}"]
     nominal = 100 * (1 - cfg.alpha)
     band_toy_plots.heatmap_row(
         mats, titles, f"Joint coverage, % (centre {nominal:g})",

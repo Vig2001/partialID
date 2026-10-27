@@ -37,7 +37,7 @@ DEFAULT_SEED = 7
 DEFAULT_OUT_DIR = Path(__file__).resolve().parent / "outputs" / "band_toy"
 PROGRESS_EVERY = 18  # cells between progress messages
 
-M1 = "M1 intersection"
+M1 = "M1 naive intersection"
 M2 = "M2 convex (oracle)"
 M3 = "M3 convex (split)"
 M4 = "M4 convex (plug-in)"
