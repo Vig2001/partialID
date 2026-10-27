@@ -74,7 +74,7 @@ class ToyConfig:
     frac_a: float = 0.3
     reps: int = 5000
     gaps: tuple[float, ...] = (0.0, 0.05, 0.1, 0.2, 0.5, 1.0)
-    ratios: tuple[float, ...] = (1, 2, 5)
+    ratios: tuple[float, ...] = (1, 2, 5, 10)
 
     def __post_init__(self):
         if not 0 < self.alpha < 1:
@@ -355,9 +355,15 @@ def _check_oracle_own_target(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
 def _check_m1_matches_m2_at_large_gap(
     df: pd.DataFrame, cfg: ToyConfig
 ) -> list[Check]:
-    """At g_L = g_U = 1, M2 puts all weight on one dataset per end, like M1."""
+    """At g_L = g_U = 1, M2 puts all weight on one dataset per end, like M1.
+
+    Only for r with max gap >= z * SE_2, the threshold for w_U* = 0 (paper,
+    toy Remark); for larger r the oracle upper weight is still interior.
+    """
     checks = []
     for r in cfg.ratios:
+        if max(cfg.gaps) < cfg.z * r * cfg.se1:
+            continue
         m1, m2 = _cell(df, M1, 1.0, 1.0, r), _cell(df, M2, 1.0, 1.0, r)
         ok = (m2.wL_oracle >= 0.95 and m2.wU_oracle <= 0.05
               and abs(m1.cov_joint - m2.cov_joint) <= 0.01

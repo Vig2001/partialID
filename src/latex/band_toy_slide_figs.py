@@ -4,7 +4,7 @@ Does not rerun the simulation: run `python -m src.band_toy` first.
 
 Usage, from the repo root:
     python -m src.latex.band_toy_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
-        [--with-calibrated]
+        [--table-ratios 1 2 5] [--with-calibrated]
 Outputs, in src/outputs/band_toy/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, intersection vs split
     width_coverage_small_gaps.tex       table rows for the width slide, or
@@ -62,6 +62,7 @@ def table_cell(row: pd.Series, nominal: float) -> str:
 def width_table_rows(
     df: pd.DataFrame,
     gaps: Sequence[float],
+    ratios: Sequence[float],
     cfg: band_toy.ToyConfig,
     methods: Sequence[str] = TABLE_METHODS,
 ) -> str:
@@ -73,7 +74,7 @@ def width_table_rows(
     """
     nominal = 1 - cfg.alpha
     lines = []
-    for r in cfg.ratios:
+    for r in ratios:
         for k, g in enumerate(gaps):
             cells = df[(df.r == r) & (df.g_L == g) & (df.g_U == g)]
             if cells.empty:
@@ -97,6 +98,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--table-gaps", type=float, nargs="+",
                         default=[0.0, 0.05, 0.1],
                         help="Equal gaps g_L = g_U shown in the width table.")
+    parser.add_argument("--table-ratios", type=float, nargs="+",
+                        default=[1.0, 2.0, 5.0],
+                        help="Values of r shown in the width table.")
     parser.add_argument("--with-calibrated", action="store_true",
                         help="Add a calibrated intersection (M6) column after "
                              "M1, written to a separate _calibrated table.")
@@ -124,7 +128,8 @@ def main() -> None:
     table_path = out_dir / f"width_coverage_small_gaps{table_name}.tex"
     table_path.write_text(
         "% Written by python -m src.latex.band_toy_slide_figs from results.csv\n"
-        + width_table_rows(df, args.table_gaps, cfg, methods)
+        + width_table_rows(df, args.table_gaps, args.table_ratios, cfg,
+                           methods)
     )
     print(f"Written to {fig_path}\nWritten to {table_path}")
 
