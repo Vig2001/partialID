@@ -4,9 +4,11 @@ Does not rerun the simulation: run `python -m src.band_toy` first.
 
 Usage, from the repo root:
     python -m src.latex.band_toy_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
+        [--with-calibrated]
 Outputs, in src/outputs/band_toy/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, intersection vs split
-    width_coverage_small_gaps.tex       table rows for the width slide
+    width_coverage_small_gaps.tex       table rows for the width slide, or
+    width_coverage_small_gaps_calibrated.tex  with an M6 column after M1
 """
 
 import argparse
@@ -20,8 +22,11 @@ from src.plotting import band_toy_plots
 
 DEFAULT_RESULTS = band_toy.DEFAULT_OUT_DIR / "results.csv"
 TABLE_METHODS = (band_toy.M1, band_toy.M2, band_toy.M3, band_toy.M4)
-# LaTeX macro wrapping each method's cell, so the slide controls overlays.
-TABLE_CELL_MACROS = ("", "", r"\splitcol", r"\plugincol")
+TABLE_METHODS_CALIBRATED = (
+    band_toy.M1, band_toy.M6, band_toy.M2, band_toy.M3, band_toy.M4
+)
+# LaTeX macro wrapping a method's cell, so the slide controls overlays.
+TABLE_CELL_MACROS = {band_toy.M3: r"\splitcol", band_toy.M4: r"\plugincol"}
 UNDERCOVER_SES = 2  # flag coverage this many MC s.e. below nominal
 
 
@@ -55,9 +60,12 @@ def table_cell(row: pd.Series, nominal: float) -> str:
 
 
 def width_table_rows(
-    df: pd.DataFrame, gaps: Sequence[float], cfg: band_toy.ToyConfig
+    df: pd.DataFrame,
+    gaps: Sequence[float],
+    cfg: band_toy.ToyConfig,
+    methods: Sequence[str] = TABLE_METHODS,
 ) -> str:
-    """LaTeX tabular rows: r, g, then width (coverage) per method.
+    """LaTeX tabular rows: r, g, then width (coverage) per method in methods.
 
     Uses the equal-gap cells g_L = g_U = g. Rows are grouped by r, with r
     printed on the first row of each group. The slide must define
@@ -71,7 +79,8 @@ def width_table_rows(
             if cells.empty:
                 raise ValueError(f"No equal-gap cells for {r=}, {g=}")
             row = [f"{r:g}" if k == 0 else "", f"{g:g}"]
-            for method, macro in zip(TABLE_METHODS, TABLE_CELL_MACROS):
+            for method in methods:
+                macro = TABLE_CELL_MACROS.get(method, "")
                 cell = table_cell(cells[cells.method == method].iloc[0], nominal)
                 row.append(f"{macro}{{{cell}}}" if macro else cell)
             lines.append(" & ".join(row) + r" \\")
@@ -88,6 +97,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--table-gaps", type=float, nargs="+",
                         default=[0.0, 0.05, 0.1],
                         help="Equal gaps g_L = g_U shown in the width table.")
+    parser.add_argument("--with-calibrated", action="store_true",
+                        help="Add a calibrated intersection (M6) column after "
+                             "M1, written to a separate _calibrated table.")
     parser.add_argument("--out-dir", type=Path, default=None,
                         help="Output directory; defaults to the results' one.")
     return parser.parse_args(argv)
@@ -105,10 +117,14 @@ def main() -> None:
 
     fig_path = out_dir / f"joint_coverage_r{args.ratio:g}_slides.png"
     plot_joint_coverage(df, args.ratio, cfg, fig_path)
-    table_path = out_dir / "width_coverage_small_gaps.tex"
+    if args.with_calibrated:
+        methods, table_name = TABLE_METHODS_CALIBRATED, "_calibrated"
+    else:
+        methods, table_name = TABLE_METHODS, ""
+    table_path = out_dir / f"width_coverage_small_gaps{table_name}.tex"
     table_path.write_text(
         "% Written by python -m src.latex.band_toy_slide_figs from results.csv\n"
-        + width_table_rows(df, args.table_gaps, cfg)
+        + width_table_rows(df, args.table_gaps, cfg, methods)
     )
     print(f"Written to {fig_path}\nWritten to {table_path}")
 

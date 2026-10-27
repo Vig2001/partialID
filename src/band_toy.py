@@ -4,13 +4,16 @@ Two datasets each identify a band that is wider than the truth: dataset 1
 attains the true lower end, dataset 2 the true upper end, so their intersection
 is exactly the true band. We compare the naive intersection CI with the convex
 combination CI (oracle weights, sample-split weights, plug-in weights without
-splitting).
+splitting), and with a calibrated intersection CI that uses
+z = Phi^{-1}(1 - alpha / 4): Bonferroni over 2 datasets x 2 ends, so it is
+valid whichever dataset attains each end.
 
 Usage, from the repo root:
     python -m src.band_toy [--seed 7] [--reps 5000] [--frac-a 0.3] [--no-plots]
 
 Plans: quality_reports/plans/2026-10-09_band-toy-simulation.md,
-       quality_reports/plans/2026-10-11_band-toy-refactor.md
+       quality_reports/plans/2026-10-11_band-toy-refactor.md,
+       quality_reports/plans/2026-10-27_calibrated-intersection.md
 Outputs: src/outputs/band_toy/
 """
 
@@ -40,6 +43,7 @@ M3 = "M3 convex (split)"
 M4 = "M4 convex (plug-in)"
 M5_D1 = "M5 dataset 1 only"
 M5_D2 = "M5 dataset 2 only"
+M6 = "M6 intersection (calibrated)"
 PLOT_METHODS = (M1, M2, M3, M4)
 
 
@@ -52,7 +56,8 @@ class ToyConfig:
         theta: True estimand.
         delta: Half-width of the true band.
         alpha: Nominal level. Each end uses z = Phi^{-1}(1 - alpha / 2),
-            Bonferroni for the joint band.
+            Bonferroni for the joint band; the calibrated intersection uses
+            z_calibrated = Phi^{-1}(1 - alpha / 4).
         n: Dataset sizes (n_1, n_2).
         se1: Standard deviation of Ybar_1.
         frac_a: Fold-A fraction for the sample-split method.
@@ -86,6 +91,11 @@ class ToyConfig:
     @property
     def z(self) -> float:
         return stats.norm.ppf(1 - self.alpha / 2)
+
+    @property
+    def z_calibrated(self) -> float:
+        """Bonferroni over the 4 one-sided (dataset, end) events."""
+        return stats.norm.ppf(1 - self.alpha / 4)
 
     @property
     def true_lo(self) -> float:
@@ -209,6 +219,9 @@ def ci_by_method(
         ),
         M5_D1: ci_methods.convex_ci(full.L, full.U, full.s2, 1.0, 1.0, z),
         M5_D2: ci_methods.convex_ci(full.L, full.U, full.s2, 0.0, 0.0, z),
+        M6: ci_methods.intersection_ci(
+            full.L, full.U, full.s2, cfg.z_calibrated
+        ),
     }
     return cis, w_oracle
 
@@ -370,13 +383,26 @@ def _check_coverage_separable(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
                   f"max range {worst:.5f} (allowed {2 / cfg.reps:.5f})")]
 
 
+def _check_calibrated_valid(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
+    """M6 joint coverage is >= 1 - alpha in every cell (up to MC error)."""
+    m6 = df[df.method == M6]
+    nominal = 1 - cfg.alpha
+    # Cells with coverage 1 have MC SE 0 and give z = +inf, which passes.
+    zs = (m6.cov_joint - nominal) / m6.cov_joint_mcse
+    return [Check(
+        f"M6 joint coverage >= {nominal:g} in every cell",
+        zs.min() >= -3,
+        f"min coverage {m6.cov_joint.min():.4f}, min z = {zs.min():.2f} "
+        f"over {len(zs)} cells")]
+
+
 def run_sanity_checks(df: pd.DataFrame, cfg: ToyConfig) -> bool:
     """Prints PASS/FAIL for each check and returns True if all pass."""
     checks = []
     for check_fn in (_check_closed_forms, _check_oracle_weights_at_tie,
                      _check_oracle_own_target,
                      _check_m1_matches_m2_at_large_gap,
-                     _check_coverage_separable):
+                     _check_coverage_separable, _check_calibrated_valid):
         checks.extend(check_fn(df, cfg))
     print("\nSanity checks")
     for check in checks:
@@ -417,15 +443,15 @@ def make_plots(df: pd.DataFrame, cfg: ToyConfig, out_dir: Path) -> None:
         1 - cfg.alpha, "{:.3f}",
         out_path=out_dir / "fig2_joint_coverage.png", **grid)
 
-    # TODO: M1 undercovers at small gaps, so these width ratios are not
-    # like-for-like. Calibrate the invalid CIs or plot coverage with width.
+    # Ratios against M6, not M1: M1 undercovers at small gaps, so widths
+    # relative to it are not like-for-like.
     def width_ratio(method, r):
         return (band_toy_plots.pivot_cells(df, method, r, "width", cfg.gaps)
-                / band_toy_plots.pivot_cells(df, M1, r, "width", cfg.gaps))
+                / band_toy_plots.pivot_cells(df, M6, r, "width", cfg.gaps))
 
     ratios = [[width_ratio(m, r) for r in cfg.ratios] for m in (M3, M2)]
     band_toy_plots.heatmap_grid(
-        ratios, ["M3 / M1", "M2 / M1"], "Mean width ratio (centre 1)", 1.0,
+        ratios, ["M3 / M6", "M2 / M6"], "Mean width ratio (centre 1)", 1.0,
         "{:.2f}", out_path=out_dir / "fig3_width_ratio.png", **grid)
 
     band_toy_plots.plot_per_end(
