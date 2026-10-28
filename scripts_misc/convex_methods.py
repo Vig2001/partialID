@@ -17,14 +17,14 @@ import matplotlib.pyplot as plt
 from scipy.stats import norm, probplot
 import time
 
-from initial_demo import simulate_dgp, true_tau_S0
-from helpers.optimisers import (pseudo_true_grid,
+from scripts_misc.outdated_help.outdated_simulation1 import simulate_dgp, true_tau_S0
+from scripts_misc.outdated_help.outdated_optimisers import (pseudo_true_grid,
                                 fit_zsb_components, fit_niw_components,
                                 zsb_from_components, niw_from_components, 
                                 fit_components_boot)
-from helpers.boot_funcs import horowitz_manski_ci
-from helpers.weight_optimisers import optimal_omega_lower, optimal_omega_upper
-from plotting.visualisations import plot_hist_with_gaussian, plot_qq
+from scripts_misc.outdated_help.outdated_boot_funcs import horowitz_manski_ci
+from src.helpers.weight_optimisers import optimal_omega_lower, optimal_omega_upper
+from scripts_misc.outdated_help.outdated_visualisations import plot_hist_with_gaussian, plot_qq
 
 # ----------------------------- Required Functions ------------------------------
 def boot_single_pair(dat, Lam, Gam, B, rng):

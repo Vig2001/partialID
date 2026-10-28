@@ -6,8 +6,8 @@ of the bounds from the OS and RCT. i.e. we know the true variances and means"""
 import numpy as np
 import pandas as pd
 from scipy.stats import norm, gaussian_kde
-from helpers.simulation1 import simulate_dgp
-from helpers.weight_optimisers import optimal_omega_lower, optimal_omega_upper
+from scripts_misc.outdated_help.outdated_simulation1 import simulate_dgp
+from src.helpers.weight_optimisers import optimal_omega_lower, optimal_omega_upper
 import matplotlib.pyplot as plt
 np.random.seed(7)
 

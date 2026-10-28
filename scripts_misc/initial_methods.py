@@ -28,10 +28,10 @@ import numpy as np
 import pandas as pd
 
 # Import your local modules
-from src.helpers.simulation1 import simulate_dgp, true_tau_S0
-from src.helpers.optimisers import zsb_bounds, niw_bounds
-from src.helpers.boot_funcs import bootstrap_pair
-from src.plotting.visualisations import plot_forest_bounds
+from scripts_misc.outdated_help.outdated_simulation1 import simulate_dgp, true_tau_S0
+from scripts_misc.outdated_help.outdated_optimisers import zsb_bounds, niw_bounds
+from scripts_misc.outdated_help.outdated_boot_funcs import bootstrap_pair
+from scripts_misc.outdated_help.outdated_visualisations import plot_forest_bounds
 
 def iv(lo, hi, empty=False):
     return "empty" if empty else f"[{lo: .3f}, {hi: .3f}]"

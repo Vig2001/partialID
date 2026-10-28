@@ -18,7 +18,7 @@ project1venv/bin/python -m pip install -e .
 
 ### Layout
 - `src/band_toy.py`: known-true-band toy comparing the intersection CI with the convex combination CI.
-- `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights). Old ZSB/NIW helpers are archived in `scripts_misc/outdated_help/`.
+- `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights). Old ZSB/NIW helpers and plots are archived in `scripts_misc/outdated_help/`.
 - `src/plotting/`: figure code (`band_toy_plots.py` for the toy).
 - `src/outputs/<script>/`: results and figures written by each script.
 
