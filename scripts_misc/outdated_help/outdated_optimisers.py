@@ -41,6 +41,18 @@ def fit_logit(X, y):
     return m
 
 
+# Columns the analyst must never use as covariates: design/outcome columns,
+# the unmeasured U's, and the oracle columns the DGPs return (potential
+# outcomes, their means/probabilities, true propensities and effects).
+NON_COVARIATE_COLS = ["S", "T", "Y", "U_m", "U_c", "Y0", "Y1", "mu0", "mu1",
+                      "p0", "p1", "True_prob_T", "prob_S", "tau"]
+
+
+def covariate_cols(dat):
+    """Observed covariate columns of a simulated dataframe."""
+    return [col for col in dat.columns if col not in NON_COVARIATE_COLS]
+
+
 # ----------------------------------------------------------------------------
 # Zhao, Small & Bhattacharya (2019): MSM bounds from the OS alone
 # ----------------------------------------------------------------------------
@@ -57,10 +69,7 @@ def zsb_bounds(dat, Lambda, trim=0.01):
     os_ = dat[dat["S"] == 0]
 
     # dynamically infer covariates from the dataframe, rather than hardcoding them
-    exclude_cols = ["S", "T", "Y", "U_m", "U_c "]
-    X_cols = [col for col in os_.columns if col not in exclude_cols]
-
-    X = os_[X_cols].to_numpy()
+    X = os_[covariate_cols(os_)].to_numpy()
     ehat = fit_logit(X, os_["T"].to_numpy()).predict_proba(X)[:, 1]
     ehat = np.clip(ehat, trim, 1 - trim)
 
@@ -102,33 +111,9 @@ def zsb_bounds(dat, Lambda, trim=0.01):
 # Blowing up the weights
 
 def niw_bounds(dat, Gamma, p_trt=0.5, trim=0.01):
-    exclude_cols = ["S", "T", "Y", "U_m", "U_c "]
-    X_cols = [col for col in dat.columns if col not in exclude_cols]
-    X_all = dat[X_cols].to_numpy()
-    pi_hat = fit_logit(X_all, dat["S"].to_numpy()).predict_proba(X_all)[:, 1]
-    pi_hat = np.clip(pi_hat, trim, 1 - trim)
-
-    rct = dat["S"].to_numpy() == 1
-    tr = dat[rct]
-    Xtr = tr[X_cols].to_numpy()
-    Ttr = tr["T"].to_numpy()
-    Ytr = tr["Y"].to_numpy().astype(float)
-
-    # outcome models within each trial arm (observed X only)
-    m1 = fit_logit(Xtr[Ttr == 1], Ytr[Ttr == 1])
-    m0 = fit_logit(Xtr[Ttr == 0], Ytr[Ttr == 0])
-    m1x = m1.predict_proba(Xtr)[:, 1]
-    m0x = m0.predict_proba(Xtr)[:, 1]
-
-    psi = (m1x - m0x) + np.where(Ttr == 1,
-                                 (Ytr - m1x) / p_trt,
-                                 -(Ytr - m0x) / (1 - p_trt))
-
-    a = ((1 - pi_hat) / pi_hat)[rct]   # nominal odds of being in S = 0
-    zeros = np.zeros(rct.sum())        # purely multiplicative weights
-
-    return (hajek_extreme(psi, a, zeros, 1 / Gamma, Gamma, False),
-            hajek_extreme(psi, a, zeros, 1 / Gamma, Gamma, True))
+    # Delegates to the component functions so the binary/continuous outcome
+    # handling lives in one place (fit_niw_components).
+    return niw_from_components(fit_niw_components(dat, p_trt, trim), Gamma)
 
 
 # ----------------------------------------------------------------------------
@@ -150,10 +135,7 @@ def fit_zsb_components(dat, trim=0.01):
     """Fit the OS nuisances once; return the pieces the ZSB Hajek
     extremization needs. Mirrors zsb_bounds exactly."""
     os_ = dat[dat["S"] == 0]
-
-    exclude_cols = ["S", "T", "Y", "U_m", "U_c "]
-    X_cols = [col for col in os_.columns if col not in exclude_cols]
-    X = os_[X_cols].to_numpy()
+    X = os_[covariate_cols(os_)].to_numpy()
 
     ehat = fit_logit(X, os_["T"].to_numpy()).predict_proba(X)[:, 1]
     ehat = np.clip(ehat, trim, 1 - trim)
@@ -177,8 +159,7 @@ def zsb_from_components(c, Lam):
 def fit_niw_components(dat, p_trt=0.5, trim=0.01):
     """Fit the transport nuisances once; return the NIW pseudo-outcome and
     odds weights. Mirrors niw_bounds exactly."""
-    exclude_cols = ["S", "T", "Y", "U_m", "U_c "]
-    X_cols = [col for col in dat.columns if col not in exclude_cols]
+    X_cols = covariate_cols(dat)
     X_all = dat[X_cols].to_numpy()
 
     pi_hat = fit_logit(X_all, dat["S"].to_numpy()).predict_proba(X_all)[:, 1]
