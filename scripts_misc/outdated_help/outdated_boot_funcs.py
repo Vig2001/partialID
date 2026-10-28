@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from .optimisers import zsb_bounds, niw_bounds
+from scripts_misc.outdated_help.outdated_optimisers import zsb_bounds, niw_bounds
 
 # boot_ci1
 def bootstrap_endpoints(dat, n, g, B, rng):

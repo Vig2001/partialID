@@ -3,7 +3,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression, LinearRegression
 import numpy as np
 import pandas as pd
-from .simulation1 import simulate_dgp
+from scripts_misc.outdated_help.outdated_simulation1 import simulate_dgp
 
 rng = np.random.default_rng(7)
 
