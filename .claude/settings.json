@@ -1,8 +1,28 @@
 {
   "plansDirectory": "quality_reports/plans",
+  "env": {
+    "ZOTERO_LIBRARY_ID": "5033278",
+    "ZOTERO_LIBRARY_TYPE": "group"
+  },
   "permissions": {
     "defaultMode": "default",
     "disableAutoMode": "disable",
+    "blockReadsOutsideWorkingDirectories": true,
+    "additionalDirectories": [
+      "~/Desktop/PhD_Code.nosync",
+      "~/Desktop/Stochastic_Calculus_GTA_Prep",
+      "~/Desktop/FOP_Notes",
+      "~/Desktop/IPL_Code.nosync",
+      "~/Zotero"
+    ],
+    "allow": [
+      "Bash(zotero-cli search *)",
+      "Bash(zotero-cli get *)",
+      "Bash(zotero-cli outline *)",
+      "Bash(zotero-cli read *)",
+      "Bash(zotero-cli notes list *)",
+      "Bash(zotero-cli related *)"
+    ],
     "deny": ["Read(./data/**)"],
     "ask": [
       "Bash(pip install *)",
@@ -17,6 +37,7 @@
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
+    "excludedCommands": ["zotero-cli *"],
     "filesystem": {
       "allowWrite": ["~/.matplotlib", "~/Library/Caches/pip"]
     },
