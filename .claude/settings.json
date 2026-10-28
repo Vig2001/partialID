@@ -1,6 +1,30 @@
 {
   "plansDirectory": "quality_reports/plans",
   "permissions": {
-    "deny": ["Read(./private_data/**)"]
+    "defaultMode": "default",
+    "disableAutoMode": "disable",
+    "deny": ["Read(./data/**)"],
+    "ask": [
+      "Bash(pip install *)",
+      "Bash(pip3 install *)",
+      "Bash(python -m pip install *)",
+      "Bash(python3 -m pip install *)",
+      "Bash(project1venv/bin/pip install *)",
+      "Bash(project1venv/bin/python -m pip install *)",
+      "Bash(dangerouslyDisableSandbox:true)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "filesystem": {
+      "allowWrite": ["~/.matplotlib", "~/Library/Caches/pip"]
+    },
+    "credentials": {
+      "files": [
+        { "path": "~/.ssh", "mode": "deny" },
+        { "path": "~/.config/gh", "mode": "deny" }
+      ]
+    }
   }
 }

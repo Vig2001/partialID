@@ -7,7 +7,8 @@ description: Review where the project stands and propose a prioritised list of n
    - the "Current state" section of CLAUDE.md
    - the three most recent files in quality_reports/session_logs/
    - partialID_Overleaf/Notes/To_Do.tex
-   - the most recent report in quality_reports/reviews/
+   - the most recent report in quality_reports/reviews/, if any
+   - plans in quality_reports/plans/ that are still marked draft, awaiting or on hold, and project memories marked pending or on hold. These are the easiest to forget.
 2. Summarise where things stand in five lines or fewer.
 3. Propose 3–7 next steps. For each: what it is; why now (what it unblocks or what risk it removes); rough size (hours or days); what it depends on.
 4. Order by what unblocks the most, and mark one "do first".

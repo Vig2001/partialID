@@ -137,6 +137,8 @@ Rules for agents:
   the same commit as the code that needs it. Ask before adding one.
 - If something needs non-Python binaries (compilers, system libraries), flag
   it and document the manual install step in README.
+- Never add, remove or change entries in `requirements.txt`, and never install
+  packages, without asking me first, even if the package is already installed.
 
 ---
 

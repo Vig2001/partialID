@@ -45,20 +45,25 @@ will need to store in a separate public_data folder.
 - Methods: Proposed convex combination method which I am stress-testing and proving theorems
 - Simulations: `band_toy.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/band_toy/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like. Slide versions of the toy figures and the width table come from `python -m src.latex.band_toy_slide_figs` (reads `results.csv`, no new simulation); copies with provenance live in `partialID_Overleaf/Figures/band_toy/` and `Tables/band_toy/`.
 - Code follows AGENTS.md: CIs in `src/helpers/ci_methods.py`, MC summaries in `src/helpers/mc_metrics.py`, plots in `src/plotting/band_toy_plots.py`; run with `python -m src.band_toy`. No `tests/` yet.
+- Next simulation: two independent OS datasets from the Dorn, Guo & Kallus (DVDS) DGP; draft plan in `quality_reports/plans/2026-10-28_dvds-simulation.md`. Old ZSB/NIW code is archived in `scripts_misc/outdated_help/` (not used by `src/`).
 
 ## Skills
 
 | Command | What it does |
 | --- | --- |
-| `/compile-paper` | Compile and report errors and warnings |
+| `/compile-paper [file]` | Compile the paper (or a deck) and report errors and warnings |
 | `/proofread [file]` | Grammar, typos, consistency report |
-| `/review-paper` | Proofreader + methods reviewer + referee, combined report |
+| `/review-paper` | Proofreader + methods reviewer + citation checker + referee, verified and combined (only runs when typed) |
 | `/sync-overleaf` | Guided pull/commit/push for the paper |
 | `/session-log` | Save what we did and what is next |
 | `/simulation-study [script]` | Run a simulation and check coverage, bias, width |
-| `/next-steps` | Prioritised next steps from logs and To_Do |
-| `/challenge-idea [idea]` | Stress-test an idea before investing time |
+| `/next-steps` | Prioritised next steps from logs, To_Do and pending plans |
+| `/challenge-idea [idea or plan]` | Stress-test an idea, or review a plan in `quality_reports/plans/`, before investing time |
 | `/make-slides [topic]` | Plan, build, compile and audit a Beamer talk |
+| `/write-tests [module]` | Propose tests for a `src/` module, then write them after approval |
+| `/update-paper-figs [script]` | Regenerate a figure or table, copy it into `partialID_Overleaf/` with the git hash, record provenance |
+
+Agents (in `.claude/agents/`): code-reviewer, proofreader, methods-reviewer, citation-checker, counterexample-hunter, referee, slide-auditor.
 
 ## Corrections
 

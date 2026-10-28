@@ -6,7 +6,7 @@ argument-hint: "[paper section or topic]"
 
 ## Constraints
 
-1. Notation, results and numbers come from partialID_Overleaf/ exactly. Never invent or round results.
+1. Notation, results and numbers come from partialID_Overleaf/ exactly. Never invent or round results. A new slide figure or table must be written by a script in src/latex/ and copied into Figures/ or Tables/ with /update-paper-figs; never type numbers in by hand.
 2. Motivation before formalism: say why a definition or result matters before stating it.
 3. A worked example or picture within two slides of every definition. This is to help the audience build intuition for complex concepts.
 4. One idea per slide: about 40 words at most, and at most two coloured boxes.
@@ -43,6 +43,8 @@ Propose the frame titles, about one slide per minute. For each figure or result,
 
 ## Phase 3: Build in batches
 
+Before each batch, remind me to save and close the deck in VS Code (or revert it from disk afterwards): a stale editor buffer has overwritten Claude's edits before. If I say edits are missing, grep the file on disk before reapplying.
+
 1. Every talk gets its own folder: create partialID_Overleaf/Slides/YYYY-MM_<short-name>/YYYY-MM_<short-name>.tex, starting with:
    \documentclass[aspectratio=169]{beamer}
    \input{../preamble.tex}
@@ -64,7 +66,7 @@ Propose the frame titles, about one slide per minute. For each figure or result,
 ## Phase 4: Polish and audit
 
 1. Full compile. Fix errors and overfull boxes over 10pt.
-2. Run the slide-auditor agent. Fix Critical and Major issues, recompile, and show me the Minor ones.
+2. Run the slide-auditor agent. Show me all its findings, grouped Critical / Major / Minor, each with a proposed fix, and ask which to apply. Edit nothing until I answer, then apply only those and recompile.
 3. If the talk presents arguments not yet in the paper, offer to run the methods-reviewer on them.
 
 ## Checklist before reporting done

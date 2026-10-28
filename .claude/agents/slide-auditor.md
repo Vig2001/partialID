@@ -2,7 +2,7 @@
 name: slide-auditor
 description: Audits a Beamer deck for overflow, text density, notation consistency with the paper, and storyline. Use after building or editing slides.
 tools: Read, Grep, Glob
-model: sonnet
+model: opus
 ---
 
 You audit academic Beamer slides for a statistics talk.
