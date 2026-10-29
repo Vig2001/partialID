@@ -9,10 +9,10 @@
     "disableAutoMode": "disable",
     "blockReadsOutsideWorkingDirectories": true,
     "additionalDirectories": [
-      "~/Desktop/PhD_Code.nosync",
-      "~/Desktop/Stochastic_Calculus_GTA_Prep",
-      "~/Desktop/FOP_Notes",
-      "~/Zotero"
+      "/Users/vigneshbalaji/Desktop/PhD_Code.nosync",
+      "/Users/vigneshbalaji/Desktop/Stochastic_Calculus_GTA_Prep",
+      "/Users/vigneshbalaji/Desktop/FOP_Notes",
+      "/Users/vigneshbalaji/Zotero"
     ],
     "allow": [
       "Bash(zotero-cli search *)",
@@ -22,7 +22,7 @@
       "Bash(zotero-cli notes list *)",
       "Bash(zotero-cli related *)"
     ],
-    "deny": ["Read(./data/**)"],
+    "deny": ["Read(./private_data/**)"],
     "ask": [
       "Bash(pip install *)",
       "Bash(pip3 install *)",

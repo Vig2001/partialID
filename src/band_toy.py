@@ -215,7 +215,8 @@ def ci_by_method(
             fold_b.L, fold_b.U, fold_b.s2, *plug_in_weights(fold_a, z), z
         ),
         M4: ci_methods.convex_ci(
-            full.L, full.U, full.s2, *plug_in_weights(full, z), z
+            full.L, full.U, full.
+            s2, *plug_in_weights(full, z), z
         ),
         M5_D1: ci_methods.convex_ci(full.L, full.U, full.s2, 1.0, 1.0, z),
         M5_D2: ci_methods.convex_ci(full.L, full.U, full.s2, 0.0, 0.0, z),
