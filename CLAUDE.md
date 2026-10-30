@@ -46,6 +46,7 @@ will need to store in a separate public_data folder.
 - Simulations: `toy_sim.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/toy_sim/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like. Slide versions of the toy figures and the width table come from `python -m src.latex.toy_sim_slide_figs` (reads `results.csv`, no new simulation); copies with provenance live in `partialID_Overleaf/Figures/toy_sim/` and `Tables/toy_sim/`.
 - Code follows AGENTS.md: CIs in `src/helpers/ci_methods.py`, MC summaries in `src/helpers/mc_metrics.py`, plots in `src/plotting/toy_sim_plots.py`; run with `python -m src.toy_sim`. No `tests/` yet.
 - Next simulation: two independent OS datasets from the Dorn, Guo & Kallus (DVDS) DGP; draft plan in `quality_reports/plans/2026-10-28_dvds-simulation.md`. Old ZSB/NIW code is archived in `scripts_misc/outdated_help/` (not used by `src/`).
+- R/Stata: the DVDS simulation will most likely be in R, in a top-level `R/` folder (`R/stata/` for `clrbound` `.do` files via RStata), with packages pinned by `renv` and outputs in `src/outputs/<script>/`; layout in README "Planned structure". The folder isn't created yet. Draft Python CLR two-source estimator in `quality_reports/plans/2026-10-30_clr-implementation-draft.md`.
 
 ## Skills
 
