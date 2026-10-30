@@ -1,11 +1,11 @@
-"""Slide-sized figures and tables for the band toy, read from results.csv.
+"""Slide-sized figures and tables for the toy simulation, read from results.csv.
 
-Does not rerun the simulation: run `python -m src.band_toy` first.
+Does not rerun the simulation: run `python -m src.toy_sim` first.
 
 Usage, from the repo root:
-    python -m src.latex.band_toy_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
+    python -m src.latex.toy_sim_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
         [--table-ratios 1 2 5] [--with-calibrated]
-Outputs, in src/outputs/band_toy/:
+Outputs, in src/outputs/toy_sim/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, naive intersection vs split
     width_coverage_small_gaps.tex       table rows for the width slide, or
     width_coverage_small_gaps_calibrated.tex  with an M6 column after M1
@@ -17,35 +17,35 @@ from pathlib import Path
 
 import pandas as pd
 
-from src import band_toy
-from src.plotting import band_toy_plots
+from src import toy_sim
+from src.plotting import toy_sim_plots
 
-DEFAULT_RESULTS = band_toy.DEFAULT_OUT_DIR / "results.csv"
-TABLE_METHODS = (band_toy.M1, band_toy.M2, band_toy.M3, band_toy.M4)
+DEFAULT_RESULTS = toy_sim.DEFAULT_OUT_DIR / "results.csv"
+TABLE_METHODS = (toy_sim.M1, toy_sim.M2, toy_sim.M3, toy_sim.M4)
 TABLE_METHODS_CALIBRATED = (
-    band_toy.M1, band_toy.M6, band_toy.M2, band_toy.M3, band_toy.M4
+    toy_sim.M1, toy_sim.M6, toy_sim.M2, toy_sim.M3, toy_sim.M4
 )
 # LaTeX macro wrapping a method's cell, so the slide controls overlays.
-TABLE_CELL_MACROS = {band_toy.M3: r"\splitcol", band_toy.M4: r"\plugincol"}
+TABLE_CELL_MACROS = {toy_sim.M3: r"\splitcol", toy_sim.M4: r"\plugincol"}
 UNDERCOVER_SES = 2  # flag coverage this many MC s.e. below nominal
 
 
 def plot_joint_coverage(
-    df: pd.DataFrame, ratio: float, cfg: band_toy.ToyConfig, out_path: Path
+    df: pd.DataFrame, ratio: float, cfg: toy_sim.ToyConfig, out_path: Path
 ) -> None:
     """Joint coverage heatmaps for the naive intersection and split CIs.
 
     Coverage is shown in percent (89.8 rather than 0.898) so the values fit
     the cells at a legible size.
     """
-    methods = (band_toy.M1, band_toy.M3)
+    methods = (toy_sim.M1, toy_sim.M3)
     mats = [
-        100 * band_toy_plots.pivot_cells(df, m, ratio, "cov_joint", cfg.gaps)
+        100 * toy_sim_plots.pivot_cells(df, m, ratio, "cov_joint", cfg.gaps)
         for m in methods
     ]
     titles = [f"Naive intersection, r = {ratio:g}", f"Convex (split), r = {ratio:g}"]
     nominal = 100 * (1 - cfg.alpha)
-    band_toy_plots.heatmap_row(
+    toy_sim_plots.heatmap_row(
         mats, titles, f"Joint coverage, % (centre {nominal:g})",
         nominal, "{:.1f}", cfg.gaps, out_path, fontsize=9,
     )
@@ -63,7 +63,7 @@ def width_table_rows(
     df: pd.DataFrame,
     gaps: Sequence[float],
     ratios: Sequence[float],
-    cfg: band_toy.ToyConfig,
+    cfg: toy_sim.ToyConfig,
     methods: Sequence[str] = TABLE_METHODS,
 ) -> str:
     """LaTeX tabular rows: r, g, then width (coverage) per method in methods.
@@ -92,7 +92,7 @@ def width_table_rows(
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS,
-                        help="results.csv written by src.band_toy.")
+                        help="results.csv written by src.toy_sim.")
     parser.add_argument("--ratio", type=float, default=1,
                         help="Value of r = SE_2 / SE_1 for the heatmaps.")
     parser.add_argument("--table-gaps", type=float, nargs="+",
@@ -112,7 +112,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     df = pd.read_csv(args.results)
-    cfg = band_toy.ToyConfig()
+    cfg = toy_sim.ToyConfig()
     if args.ratio not in set(df.r):
         raise ValueError(
             f"No cells with r = {args.ratio}; have {sorted(set(df.r))}"
@@ -127,7 +127,7 @@ def main() -> None:
         methods, table_name = TABLE_METHODS, ""
     table_path = out_dir / f"width_coverage_small_gaps{table_name}.tex"
     table_path.write_text(
-        "% Written by python -m src.latex.band_toy_slide_figs from results.csv\n"
+        "% Written by python -m src.latex.toy_sim_slide_figs from results.csv\n"
         + width_table_rows(df, args.table_gaps, args.table_ratios, cfg,
                            methods)
     )

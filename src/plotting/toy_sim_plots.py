@@ -1,4 +1,4 @@
-"""Figures for the band toy simulation (src/band_toy.py).
+"""Figures for the toy simulation (src/toy_sim.py).
 
 Results come as a DataFrame with one row per (g_L, g_U, r, method) cell.
 """

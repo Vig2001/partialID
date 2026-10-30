@@ -72,7 +72,7 @@ projectone/
 │   ├── plotting/           # figure code
 │   │   └── __init__.py
 │   ├── outputs/            # generated results (heavy files gitignored)
-│   └── band_toy.py         # current toy example / entry script
+│   └── toy_sim.py          # current toy example / entry script
 ├── scripts_misc/           # ARCHIVE: old rough working. Read-only, see below
 ├── tests/                  # pytest tests, mirroring src/ module names
 ├── partialID_Overleaf/     # SEPARATE git repo, synced with Overleaf (the paper)
@@ -93,10 +93,10 @@ Rules:
 - **`src/` is the source of truth.** New reusable logic goes in `src/`
   (usually `src/helpers/` or a new module), as small, pure, documented
   functions.
-- **Entry scripts** (e.g. `src/band_toy.py`) are thin glue: parse arguments,
+- **Entry scripts** (e.g. `src/toy_sim.py`) are thin glue: parse arguments,
   call library functions, save results. Logic lives in functions, executed via
   `main()` under `if __name__ == '__main__':`. Run them as modules from the
-  repo root: `python -m src.band_toy`.
+  repo root: `python -m src.toy_sim`.
 - **The package is installed in editable mode** (`pip install -e .` inside
   `project1venv`). Import by package path from anywhere:
   `from src.helpers import bounds`. **Never** manipulate `sys.path`.

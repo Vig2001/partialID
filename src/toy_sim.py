@@ -9,12 +9,12 @@ z = Phi^{-1}(1 - alpha / 4): Bonferroni over 2 datasets x 2 ends, so it is
 valid whichever dataset attains each end.
 
 Usage, from the repo root:
-    python -m src.band_toy [--seed 7] [--reps 5000] [--frac-a 0.3] [--no-plots]
+    python -m src.toy_sim [--seed 7] [--reps 5000] [--frac-a 0.3] [--no-plots]
 
 Plans: quality_reports/plans/2026-10-09_band-toy-simulation.md,
        quality_reports/plans/2026-10-11_band-toy-refactor.md,
        quality_reports/plans/2026-10-27_calibrated-intersection.md
-Outputs: src/outputs/band_toy/
+Outputs: src/outputs/toy_sim/
 """
 
 import argparse
@@ -31,10 +31,10 @@ from scipy import stats
 from src.helpers import ci_methods
 from src.helpers import mc_metrics
 from src.helpers import weight_optimisers
-from src.plotting import band_toy_plots
+from src.plotting import toy_sim_plots
 
 DEFAULT_SEED = 7
-DEFAULT_OUT_DIR = Path(__file__).resolve().parent / "outputs" / "band_toy"
+DEFAULT_OUT_DIR = Path(__file__).resolve().parent / "outputs" / "toy_sim"
 PROGRESS_EVERY = 18  # cells between progress messages
 
 M1 = "M1 naive intersection"
@@ -434,17 +434,17 @@ def print_diagonal(df: pd.DataFrame) -> None:
 
 def make_plots(df: pd.DataFrame, cfg: ToyConfig, out_dir: Path) -> None:
     """Writes figures 1-4 to out_dir."""
-    styles = band_toy_plots.method_styles(PLOT_METHODS)
+    styles = toy_sim_plots.method_styles(PLOT_METHODS)
     grid = dict(gaps=cfg.gaps, ratios=cfg.ratios)
-    band_toy_plots.plot_per_end(
+    toy_sim_plots.plot_per_end(
         df, "cov_{end_name}", stats.norm.cdf(cfg.z), "Coverage of {end} end",
         PLOT_METHODS, styles, reps=cfg.reps,
         out_path=out_dir / "fig1_per_end_coverage.png", **grid)
 
     cov_methods = (M1, M3)
-    cov = [[band_toy_plots.pivot_cells(df, m, r, "cov_joint", cfg.gaps)
+    cov = [[toy_sim_plots.pivot_cells(df, m, r, "cov_joint", cfg.gaps)
             for r in cfg.ratios] for m in cov_methods]
-    band_toy_plots.heatmap_grid(
+    toy_sim_plots.heatmap_grid(
         cov, cov_methods,
         f"Joint coverage of the true band (centre {1 - cfg.alpha:g})",
         1 - cfg.alpha, "{:.3f}",
@@ -453,15 +453,15 @@ def make_plots(df: pd.DataFrame, cfg: ToyConfig, out_dir: Path) -> None:
     # Ratios against M6, not M1: M1 undercovers at small gaps, so widths
     # relative to it are not like-for-like.
     def width_ratio(method, r):
-        return (band_toy_plots.pivot_cells(df, method, r, "width", cfg.gaps)
-                / band_toy_plots.pivot_cells(df, M6, r, "width", cfg.gaps))
+        return (toy_sim_plots.pivot_cells(df, method, r, "width", cfg.gaps)
+                / toy_sim_plots.pivot_cells(df, M6, r, "width", cfg.gaps))
 
     ratios = [[width_ratio(m, r) for r in cfg.ratios] for m in (M3, M2)]
-    band_toy_plots.heatmap_grid(
+    toy_sim_plots.heatmap_grid(
         ratios, ["M3 / M6", "M2 / M6"], "Mean width ratio (centre 1)", 1.0,
         "{:.2f}", out_path=out_dir / "fig3_width_ratio.png", **grid)
 
-    band_toy_plots.plot_per_end(
+    toy_sim_plots.plot_per_end(
         df, "w{end}", None, "Mean weight on dataset 1 ({end} end)",
         PLOT_METHODS[1:], styles, reps=cfg.reps,
         out_path=out_dir / "fig4_weights.png", **grid)

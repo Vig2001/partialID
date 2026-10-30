@@ -1,7 +1,7 @@
 ---
 name: update-paper-figs
 description: Regenerate a figure or table for the paper or slides from code in src/, copy it into partialID_Overleaf/ with the git hash in its name, and record its provenance.
-argument-hint: "[script, e.g. src.latex.band_toy_slide_figs, plus any flags]"
+argument-hint: "[script, e.g. src.latex.toy_sim_slide_figs, plus any flags]"
 ---
 
 1. Target: $ARGUMENTS. If unclear, ask which script, flags and outputs are wanted, and whether they are for the paper, the slides or both.

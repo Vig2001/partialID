@@ -15,9 +15,9 @@ Point identification (ID) of causal estimands rely on certain strong, untestable
 
 ## Folder structure
 
-- `src/`: the current main codebase. Current methods and toy examples (`band_toy.py`).
-    - `helpers/`: functions for code; `plotting/`: functions for plotting; `latex/`: scripts that write slide/paper figures and tables (e.g. `band_toy_slide_figs.py`)
-    - `outputs/`: results and figures written by scripts, one folder per script (e.g. `outputs/band_toy/`)
+- `src/`: the current main codebase. Current methods and toy examples (`toy_sim.py`).
+    - `helpers/`: functions for code; `plotting/`: functions for plotting; `latex/`: scripts that write slide/paper figures and tables (e.g. `toy_sim_slide_figs.py`)
+    - `outputs/`: results and figures written by scripts, one folder per script (e.g. `outputs/toy_sim/`)
 - `scripts_misc/`: old rough working and exploration (old convex/initial scripts, `intuition/`, `figures/`). Not the source of truth: don't edit, import from, or review it unless I ask
 - `project1venv/`: virtual environment (never edit)
 - `partialID_Overleaf/`: the paper (the output pdf file `compiled.tex`)
@@ -43,8 +43,8 @@ will need to store in a separate public_data folder.
 ## Current state
 
 - Methods: Proposed convex combination method which I am stress-testing and proving theorems
-- Simulations: `band_toy.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/band_toy/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like. Slide versions of the toy figures and the width table come from `python -m src.latex.band_toy_slide_figs` (reads `results.csv`, no new simulation); copies with provenance live in `partialID_Overleaf/Figures/band_toy/` and `Tables/band_toy/`.
-- Code follows AGENTS.md: CIs in `src/helpers/ci_methods.py`, MC summaries in `src/helpers/mc_metrics.py`, plots in `src/plotting/band_toy_plots.py`; run with `python -m src.band_toy`. No `tests/` yet.
+- Simulations: `toy_sim.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/toy_sim/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like. Slide versions of the toy figures and the width table come from `python -m src.latex.toy_sim_slide_figs` (reads `results.csv`, no new simulation); copies with provenance live in `partialID_Overleaf/Figures/toy_sim/` and `Tables/toy_sim/`.
+- Code follows AGENTS.md: CIs in `src/helpers/ci_methods.py`, MC summaries in `src/helpers/mc_metrics.py`, plots in `src/plotting/toy_sim_plots.py`; run with `python -m src.toy_sim`. No `tests/` yet.
 - Next simulation: two independent OS datasets from the Dorn, Guo & Kallus (DVDS) DGP; draft plan in `quality_reports/plans/2026-10-28_dvds-simulation.md`. Old ZSB/NIW code is archived in `scripts_misc/outdated_help/` (not used by `src/`).
 
 ## Skills

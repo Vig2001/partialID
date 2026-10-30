@@ -19,7 +19,7 @@ Two ways of solving the same problem
    - vectorised: arrays of R inputs -> R weights in one call
    - precision = grid spacing (1e-3 by default)
    - can return exactly 0 or 1
-   - fast for millions of optimisations (e.g. band_toy.py)
+   - fast for millions of optimisations (e.g. toy_sim.py)
 
 The objective is concave in w for the lower bound (and convex for the upper), so
 both methods find the same global optimum, up to their precision.
