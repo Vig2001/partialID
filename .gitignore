@@ -21,7 +21,14 @@ dist/
 # Jupyter
 .ipynb_checkpoints/
 
+# R (renv/library/ is ignored by renv/.gitignore)
+.Rhistory
+.RData
+
 # Heavy results (regenerate from code)
 src/outputs/**/*.pkl
 src/outputs/**/*.npy
 src/outputs/**/*.npz
+src/outputs/causal_sim/estimates.csv
+# Third-party code, cloned at a pinned commit (see README)
+external/

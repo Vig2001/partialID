@@ -1,0 +1,7 @@
+# Folders renv does not scan for R package dependencies.
+scripts_misc/
+partialID_Overleaf/
+project1venv/
+src/
+quality_reports/
+external/

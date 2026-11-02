@@ -16,14 +16,34 @@ python -m pip install -r requirements.txt
 project1venv/bin/python -m pip install -e .
 ```
 
+**R (for `R/`).** Requires R 4.6 and a C++ toolchain (Xcode command-line tools): Homebrew R cannot use CRAN binaries, so packages compile from source (a few minutes, once). Starting R in the repo root runs `.Rprofile`, which activates the project's renv environment and installs renv itself if needed. Then install the pinned packages:
+
+```
+Rscript -e 'renv::restore()'
+```
+
+The renv cache is disabled for this project (`renv/settings.json`), so packages live in `renv/library/` (gitignored). To add a package: `install.packages("pkg")` from the repo root, use it in `R/`, then `Rscript -e 'renv::snapshot()'` and commit `renv.lock`. renv only records packages named literally in `R/` (`pkg::fn`, `library(pkg)`, `requireNamespace("pkg")`).
+
+**DGK's code (for `R/causal_sim.R` and `R/dgk_replication.R`).** The causal simulation runs the code of Dorn, Guo & Kallus unmodified. Clone their repository at the pinned commit into `external/` (gitignored):
+
+```
+git clone https://github.com/CausalML/DoublyValidDoublySharpSensitivity.git external/DoublyValidDoublySharpSensitivity
+git -C external/DoublyValidDoublySharpSensitivity checkout 26cbbf6e90dcd0648c837c0d58568375291dd522
+```
+
+Both scripts stop if the clone is at another commit or their scripts are edited. Their repository has no licence file: use it privately and don't copy it into a public release (point to the commit instead).
+
 ### Layout
 - `src/toy_sim.py`: known-true-band toy comparing the intersection CI with the convex combination CI.
 - `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights). Old ZSB/NIW helpers and plots are archived in `scripts_misc/outdated_help/`.
 - `src/plotting/`: figure code (`toy_sim_plots.py` for the toy).
 - `src/outputs/<script>/`: results and figures written by each script.
+- `R/causal_sim.R`: two observational studies from the Dorn, Guo & Kallus continuous DGP (different n and Λ); compares calibrated intersection, single-study and convex split CIs. Explained in `partialID_Overleaf/Notes/Project_Notes/causal_sim_code_explained.tex`.
+- `R/dgk_replication.R`: runs DGK's own simulation (paper Section 7.1) unmodified and compares it with their committed results.
+- `R/helpers/`: `dgk.R` (DGK's data generation, nuisances and `dvds.continuous()`, used as is), `dgp.R` (folds, closed-form bounds), `ci_methods.R` and `mc_metrics.R` (ports of the Python modules).
 
-### Planned structure (Python and R)
-The DVDS simulation will be written in R, calling Stata's `clrbound` through `RStata` where needed. `R/`, `renv.lock` and the Stata files don't exist yet. Python stays in `src/`; R gets its own top-level folder; all outputs go to `src/outputs/<script>/`, so provenance and `/update-paper-figs` work the same for both languages.
+### Structure (Python and R)
+The DVDS simulation is written in R (`R/`, `renv.lock`). Stata's `clrbound` (through `RStata`) may be added later; `R/stata/` doesn't exist yet. Python stays in `src/`; R has its own top-level folder; all outputs go to `src/outputs/<script>/`, so provenance and `/update-paper-figs` work the same for both languages.
 
 ```
 projectone/
@@ -33,12 +53,15 @@ projectone/
 │   ├── plotting/             # figure code
 │   ├── latex/                # writes slide/paper figures and tables
 │   └── outputs/<script>/     # results from Python and R scripts
-│       └── dvds_sim/         # e.g. written by R/dvds_sim.R
+│       └── causal_sim/       # e.g. written by R/causal_sim.R
 ├── R/                        # R code (not part of the Python package)
-│   ├── dvds_sim.R            # entry script: Rscript R/dvds_sim.R --seed ...
-│   ├── helpers/              # DGP and estimator functions
-│   └── stata/                # .do files for clrbound, called via RStata
+│   ├── causal_sim.R          # entry script: Rscript R/causal_sim.R --seed ...
+│   ├── dgk_replication.R     # reruns DGK's simulation, compares with theirs
+│   ├── helpers/              # DGK adapter, bounds, CI methods, MC summaries
+│   └── stata/                # (planned) .do files for clrbound, via RStata
+├── external/                 # DGK's repository at a pinned commit (gitignored)
 ├── renv.lock                 # pinned R packages (R's requirements.txt)
+├── renv/, .Rprofile          # renv activation; renv/library/ is gitignored
 ├── requirements.txt          # pinned Python packages
 ├── pyproject.toml            # installs src/ only
 └── tests/                    # pytest tests (not set up yet)
@@ -65,6 +88,26 @@ Run entry scripts as modules from the repo root with the environment active, e.g
 python -m src.toy_sim            # defaults: --seed 7 --reps 5000 --frac-a 0.3
 python -m src.toy_sim --help     # all options
 ```
+
+The R simulation also runs from the repo root:
+
+```
+Rscript R/causal_sim.R                    # defaults: --seed 1 --reps 1000 --n1 2000 --n2 500
+Rscript R/causal_sim.R --help             # all options
+Rscript R/causal_sim.R --summarise-only   # recompute CIs from saved estimates.csv
+caffeinate -is Rscript R/causal_sim.R     # keep a Mac awake (plugged in, lid open)
+```
+
+Replicates run in parallel (default: available cores minus 1; one grf thread per worker); results do not depend on the number of workers. The default Λ grid is DGK's, `seq(1, 3, length.out = 20)`. On a 10-core M4, 1000 replicates take about 85 min. Outputs: `estimates.csv` (gitignored), `summary.csv`, `single_study_coverage.csv` and `run_info.txt` in `src/outputs/causal_sim/`.
+
+To replicate DGK's own simulation (about 40 min; their settings: seed 1, 1000 replicates, n = 1000):
+
+```
+Rscript R/dgk_replication.R               # run their scripts unmodified, then compare
+Rscript R/dgk_replication.R --check-only  # compare saved outputs only
+```
+
+It saves their committed results and ours in `src/outputs/dgk_replication/{original,replication}/`, restores their files in the clone, and writes `comparison.csv` (mean bounds and coverage per outcome, method and Λ).
 
 ### Using Orca
 [Orca](https://www.onorca.dev/) runs several Claude Code sessions side by side, giving each "branch" its own git worktree: a separate checkout of the repo in its own folder, on its own branch.

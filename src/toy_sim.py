@@ -3,8 +3,8 @@
 Two datasets each identify a band that is wider than the truth: dataset 1
 attains the true lower end, dataset 2 the true upper end, so their intersection
 is exactly the true band. We compare the naive intersection CI with the convex
-combination CI (oracle weights, sample-split weights, plug-in weights without
-splitting), and with a calibrated intersection CI that uses
+combination CI (oracle weights; sample-split weights; no split, i.e. weights
+and CI from the same data), and with a calibrated intersection CI that uses
 z = Phi^{-1}(1 - alpha / 4): Bonferroni over 2 datasets x 2 ends, so it is
 valid whichever dataset attains each end.
 
@@ -40,7 +40,7 @@ PROGRESS_EVERY = 18  # cells between progress messages
 M1 = "M1 naive intersection"
 M2 = "M2 convex (oracle)"
 M3 = "M3 convex (split)"
-M4 = "M4 convex (plug-in)"
+M4 = "M4 convex (no split)"
 M5_D1 = "M5 dataset 1 only"
 M5_D2 = "M5 dataset 2 only"
 M6 = "M6 intersection (calibrated)"
@@ -215,8 +215,7 @@ def ci_by_method(
             fold_b.L, fold_b.U, fold_b.s2, *plug_in_weights(fold_a, z), z
         ),
         M4: ci_methods.convex_ci(
-            full.L, full.U, full.
-            s2, *plug_in_weights(full, z), z
+            full.L, full.U, full.s2, *plug_in_weights(full, z), z
         ),
         M5_D1: ci_methods.convex_ci(full.L, full.U, full.s2, 1.0, 1.0, z),
         M5_D2: ci_methods.convex_ci(full.L, full.U, full.s2, 0.0, 0.0, z),

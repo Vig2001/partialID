@@ -1,0 +1,9 @@
+date: 2026-11-02 16:11
+git: 4406e4a-dirty
+command: Rscript R/dvds_sim.R 
+seed: 1 | reps: 1000 | n: 2000, 500 | frac_a: 0.3 | alpha: 0.05
+lambdas: 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3
+backend: multisession | workers: 9
+run time: 85.7 min
+R version 4.6.1 (2026-06-24)
+grf 2.6.1 | future 1.80.0 | future.apply 1.21.0 | progressr 1.1.0 | optparse 1.8.2
