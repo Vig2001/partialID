@@ -1,8 +1,10 @@
-# Two observational studies (OS) from the DGK continuous DGP, differing only in
-# sample size n_k and sensitivity parameter Lambda_k. Each study gives DVDS
-# estimates of its sharp ATE bounds [L_k, U_k], computed with DGK's own code
-# (R/helpers/dgk.R; their repository cloned in external/). CIs for the fused band
-# [max_k L_k, min_k U_k] are compared over all pairs (Lambda_1, Lambda_2):
+# Two observational studies (OS) from the DGK DGP, differing only in sample
+# size n_k and sensitivity parameter Lambda_k. Each study has a binary and a
+# continuous outcome (DGK's two designs, drawn from the same X and Z). For
+# each outcome, each study gives DVDS estimates of its sharp ATE bounds
+# [L_k, U_k], computed with DGK's own code (R/helpers/dgk.R; their repository
+# cloned in external/). CIs for the fused band [max_k L_k, min_k U_k] are
+# compared over all pairs (Lambda_1, Lambda_2), separately per outcome:
 #   M6  calibrated intersection       (full-sample fits, z = Phi^{-1}(1 - a/4))
 #   M5  each study alone              (full-sample fits; DGK's CI)
 #   M3  convex split                  (weights from fold A, CI from fold B;
@@ -16,7 +18,8 @@
 #     [--backend multisession]
 #     [--out-dir src/outputs/causal_sim] [--summarise-only]
 #
-# Plan:    quality_reports/plans/2026-11-02_dvds-r-two-os.md
+# Plans:   quality_reports/plans/2026-11-02_dvds-r-two-os.md,
+#          2026-11-02_dgk-exact-replication.md, 2026-11-02_causal-sim-binary.md
 # Notes:   partialID_Overleaf/Notes/Project_Notes/causal_sim_code_explained.tex
 # Outputs: src/outputs/causal_sim/
 
@@ -24,7 +27,8 @@
 if (!file.exists(file.path("R", "causal_sim.R"))) {
   stop("run from the repo root: Rscript R/causal_sim.R")
 }
-for (helper in c("dgp.R", "dgk.R", "ci_methods.R", "mc_metrics.R")) {
+for (helper in c("data_fusion_design.R", "dgk.R", "ci_methods.R",
+                 "mc_metrics.R", "run_time.R")) {
   source(file.path("R", "helpers", helper))
 }
 
@@ -32,6 +36,7 @@ for (helper in c("dgp.R", "dgk.R", "ci_methods.R", "mc_metrics.R")) {
 # number of values does not affect run time (forests are fitted once per fit).
 LAMBDAS <- seq(1, 3, length.out = 20)
 FITS <- c("full", "fold_a", "fold_b")
+OUTCOMES <- c("binary", "continuous")
 # Progress-bar labels; short, so the bar fits an 80-column console.
 FIT_LABELS <- c(full = "intersection", fold_a = "convex split A",
                 fold_b = "convex split B")
@@ -40,7 +45,7 @@ M5_D1 <- "M5 dataset 1 only"
 M5_D2 <- "M5 dataset 2 only"
 M6 <- "M6 intersection (calibrated)"
 MIN_FOLD_SIZE <- 100  # Smallest fold; DVDS fits forests within each arm.
-THETA <- 0  # True ATE: Y does not depend on Z in the DGK DGP.
+THETA <- 0  # True ATE: neither outcome depends on Z in the DGK DGP.
 
 
 # ----------------------------- configuration ------------------------------
@@ -136,7 +141,8 @@ replicate_seeds <- function(seed, reps) {
 }
 
 
-#' DVDS estimates for one replicate: 2 studies x 3 fits (full, fold A, B).
+#' DVDS estimates for one replicate: 2 studies x 3 fits (full, fold A, B),
+#' each fit giving both outcomes.
 #'
 #' @param rep Replicate number.
 #' @param progress progressr progressor; receives a label before each fit
@@ -183,7 +189,7 @@ set_backend <- function(cfg) {
 
 #' Runs every replicate in parallel behind one progress bar.
 #'
-#' @return data.frame with one row per (rep, study, fit, Lambda).
+#' @return data.frame with one row per (rep, study, fit, outcome, Lambda).
 run_simulation <- function(cfg) {
   num_threads <- set_backend(cfg)
   on.exit(future::plan(future::sequential), add = TRUE)
@@ -210,8 +216,10 @@ run_simulation <- function(cfg) {
 
 
 # ----------------------------- confidence intervals ------------------------
-#' Rearranges estimates into arrays [replicate, lambda_index, study].
+#' Rearranges the estimates of one outcome into arrays
+#' [replicate, lambda_index, study].
 #'
+#' @param estimates Rows of estimates.csv for a single outcome.
 #' @return Nested list: arrays[[fit]][[column]].
 bound_arrays <- function(estimates) {
   reps <- sort(unique(estimates$rep))
@@ -264,27 +272,34 @@ pair_cis <- function(arrays, i, j, z, z_calibrated) {
 }
 
 
-#' Summary rows for every (Lambda_1, Lambda_2, method).
+#' Summary rows for every (outcome, Lambda_1, Lambda_2, method).
 #'
 #' The target is the fused population band [max_k L_k, min_k U_k]. The
-#' bands are nested, so it equals the band of min(Lambda_1, Lambda_2), and
-#' the gap |U(Lambda_1) - U(Lambda_2)| is the same at both ends.
-summarise_estimates <- function(estimates, cfg) {
-  arrays <- bound_arrays(estimates)
-  lambdas <- tapply(estimates$lambda, estimates$lambda_index, `[`, 1)
-  truth <- true_band(as.numeric(lambdas))
+#' bands are nested, so it equals the band of min(Lambda_1, Lambda_2). The
+#' gaps g_L = |L(Lambda_1) - L(Lambda_2)| and g_U = |U(Lambda_1) -
+#' U(Lambda_2)| are equal for the continuous outcome (symmetric band) but
+#' not for the binary one.
+#'
+#' @param truth Output of true_bands() for the Lambda grid of the estimates.
+summarise_estimates <- function(estimates, truth, cfg) {
   rows <- list()
-  for (i in seq_along(lambdas)) {
-    for (j in seq_along(lambdas)) {
-      true_lo <- max(truth$lower[i], truth$lower[j])
-      true_hi <- min(truth$upper[i], truth$upper[j])
-      cis <- pair_cis(arrays, i, j, cfg$z, cfg$z_calibrated)
-      for (method in names(cis)) {
-        rows[[length(rows) + 1]] <- data.frame(
-          lambda_1 = truth$lambda[i], lambda_2 = truth$lambda[j],
-          gap = abs(truth$upper[i] - truth$upper[j]), method = method,
-          true_lo = true_lo, true_hi = true_hi,
-          summarise_ci(cis[[method]], true_lo, true_hi, THETA))
+  for (outcome in unique(estimates$outcome)) {
+    arrays <- bound_arrays(estimates[estimates$outcome == outcome, ])
+    band <- truth[truth$outcome == outcome, ]
+    for (i in band$lambda_index) {
+      for (j in band$lambda_index) {
+        true_lo <- max(band$lower[i], band$lower[j])
+        true_hi <- min(band$upper[i], band$upper[j])
+        cis <- pair_cis(arrays, i, j, cfg$z, cfg$z_calibrated)
+        for (method in names(cis)) {
+          rows[[length(rows) + 1]] <- data.frame(
+            outcome = outcome,
+            lambda_1 = band$lambda[i], lambda_2 = band$lambda[j],
+            gap_L = abs(band$lower[i] - band$lower[j]),
+            gap_U = abs(band$upper[i] - band$upper[j]), method = method,
+            true_lo = true_lo, true_hi = true_hi,
+            summarise_ci(cis[[method]], true_lo, true_hi, THETA))
+        }
       }
     }
   }
@@ -292,24 +307,29 @@ summarise_estimates <- function(estimates, cfg) {
 }
 
 
-#' Coverage of each study's own band by its own CI, per Lambda (DGK's
-#' criterion). With --n1 1000, study 1 replicates DGK's reported coverage.
-single_study_coverage <- function(estimates, z) {
-  full <- estimates[estimates$fit == "full", ]
-  truth <- true_band(full$lambda)
-  covered <- (full$lower - z * sqrt(full$s2_lower) <= truth$lower) &
-    (full$upper + z * sqrt(full$s2_upper) >= truth$upper)
+#' Coverage of each study's own band by its own CI, per outcome and Lambda
+#' (DGK's criterion). With --n1 1000, study 1 replicates DGK's design.
+single_study_coverage <- function(estimates, truth, z) {
+  full <- merge(estimates[estimates$fit == "full", ],
+                truth[c("outcome", "lambda_index", "lower", "upper")],
+                by = c("outcome", "lambda_index"),
+                suffixes = c("", "_true"))
+  covered <- (full$lower - z * sqrt(full$s2_lower) <= full$lower_true) &
+    (full$upper + z * sqrt(full$s2_upper) >= full$upper_true)
   out <- aggregate(list(coverage = covered),
-                   list(study = full$study, n = full$n, lambda = full$lambda),
+                   list(outcome = full$outcome, study = full$study,
+                        n = full$n, lambda = full$lambda),
                    mean)
   out$coverage_mcse <- sqrt(out$coverage * (1 - out$coverage) /
                               length(unique(full$rep)))
-  out[order(out$study, out$lambda), ]
+  out[order(out$outcome, out$study, out$lambda), ]
 }
 
 
 # ----------------------------- sanity checks ------------------------------
-#' At Lambda = 1 kappa = mu and pseudo = Y, so ATE^+ = ATE^- in every fit.
+#' At Lambda = 1 both DVDS estimators reduce to AIPW, so ATE^+ = ATE^- in
+#' every fit (continuous: kappa = mu, pseudo = Y; binary: tau = 1/2,
+#' kappa = mu).
 check_collapse_at_one <- function(estimates) {
   at_one <- estimates[estimates$lambda == 1, ]
   worst <- max(abs(at_one$upper - at_one$lower))
@@ -318,9 +338,10 @@ check_collapse_at_one <- function(estimates) {
 }
 
 
-#' Mean bounds widen with Lambda, for every (study, fit).
+#' Mean bounds widen with Lambda, for every (outcome, study, fit).
 check_monotone <- function(estimates) {
-  groups <- split(estimates, list(estimates$study, estimates$fit))
+  groups <- split(estimates,
+                  list(estimates$outcome, estimates$study, estimates$fit))
   ok <- vapply(groups, function(g) {
     lo <- tapply(g$lower, g$lambda_index, mean)
     hi <- tapply(g$upper, g$lambda_index, mean)
@@ -328,7 +349,8 @@ check_monotone <- function(estimates) {
   }, logical(1))
   list(name = "Mean L decreasing and mean U increasing in Lambda",
        ok = all(ok),
-       detail = sprintf("%d of %d (study, fit) groups monotone", sum(ok),
+       detail = sprintf("%d of %d (outcome, study, fit) groups monotone",
+                        sum(ok),
                         length(ok)))
 }
 
@@ -339,10 +361,13 @@ check_calibrated_valid <- function(summary, alpha) {
   m6 <- summary[summary$method == M6, ]
   # Cells with coverage 1 have MC s.e. 0 and give z = +Inf, which passes.
   zs <- (m6$cov_joint - (1 - alpha)) / m6$cov_joint_mcse
+  worst <- tapply(m6$cov_joint, m6$outcome, min)
   list(name = sprintf("M6 joint coverage >= %g in every pair", 1 - alpha),
        ok = min(zs) >= -3,
-       detail = sprintf("min coverage %.4f, min z = %.2f over %d pairs",
-                        min(m6$cov_joint), min(zs), nrow(m6)))
+       detail = sprintf("min coverage %s; min z = %.2f over %d pairs",
+                        paste(sprintf("%s %.4f", names(worst), worst),
+                              collapse = ", "),
+                        min(zs), nrow(m6)))
 }
 
 
@@ -370,8 +395,8 @@ print_highlights <- function(summary) {
     (summary$lambda_1 == summary$lambda_2 |
        summary$lambda_1 == max(lambdas)) &
     summary$method %in% c(M3, M6)
-  columns <- c("lambda_1", "lambda_2", "method", "cov_joint", "cov_lo",
-               "cov_hi", "width", "wL", "wU")
+  columns <- c("outcome", "lambda_1", "lambda_2", "method", "cov_joint",
+               "cov_lo", "cov_hi", "width", "wL", "wU")
   old <- options(width = 150)
   on.exit(options(old), add = TRUE)
   cat("\nDiagonal and Lambda_1 = max (full results in summary.csv)\n")
@@ -400,7 +425,6 @@ write_run_info <- function(cfg, start, path) {
   versions <- vapply(packages, function(p) {
     as.character(utils::packageVersion(p))
   }, character(1))
-  minutes <- as.numeric(difftime(Sys.time(), start, units = "mins"))
   lines <- c(
     sprintf("date: %s", format(start, "%Y-%m-%d %H:%M")),
     sprintf("git: %s", git_hash()),
@@ -410,9 +434,10 @@ write_run_info <- function(cfg, start, path) {
     sprintf("seed: %d | reps: %d | n: %s | frac_a: %g | alpha: %g",
             cfg$seed, cfg$reps, paste(cfg$n, collapse = ", "), cfg$frac_a,
             cfg$alpha),
+    sprintf("outcomes: %s", paste(OUTCOMES, collapse = ", ")),
     sprintf("lambdas: %s", paste(cfg$lambdas, collapse = ", ")),
     sprintf("backend: %s | workers: %d", cfg$backend, cfg$workers),
-    sprintf("run time: %.1f min", minutes),
+    sprintf("simulation run time: %s", format_elapsed(start)),
     R.version.string,
     paste(sprintf("%s %s", packages, versions), collapse = " | ")
   )
@@ -422,27 +447,36 @@ write_run_info <- function(cfg, start, path) {
 
 # ----------------------------- main ------------------------------
 main <- function() {
+  start <- Sys.time()
   args <- parse_args()
   cfg <- make_config(args)
   dir.create(cfg$out_dir, recursive = TRUE, showWarnings = FALSE)
   estimates_path <- file.path(cfg$out_dir, "estimates.csv")
   if (args$summarise_only) {
     estimates <- read.csv(estimates_path)
+    # Runs before 2026-11-02 estimated the continuous outcome only.
+    if (is.null(estimates$outcome)) estimates$outcome <- "continuous"
   } else {
     check_clone()
-    start <- Sys.time()
     estimates <- run_simulation(cfg)
     write.csv(estimates, estimates_path, row.names = FALSE)
     write_run_info(cfg, start, file.path(cfg$out_dir, "run_info.txt"))
   }
-  summary <- summarise_estimates(estimates, cfg)
+  # True bands, once per (outcome, Lambda); binary by Monte Carlo.
+  lambdas <- as.numeric(tapply(estimates$lambda, estimates$lambda_index,
+                               `[`, 1))
+  truth <- true_bands(lambdas)
+  truth <- truth[truth$outcome %in% estimates$outcome, ]
+  write.csv(truth, file.path(cfg$out_dir, "true_bands.csv"), row.names = FALSE)
+  summary <- summarise_estimates(estimates, truth, cfg)
   write.csv(summary, file.path(cfg$out_dir, "summary.csv"), row.names = FALSE)
-  write.csv(single_study_coverage(estimates, cfg$z),
+  write.csv(single_study_coverage(estimates, truth, cfg$z),
             file.path(cfg$out_dir, "single_study_coverage.csv"),
             row.names = FALSE)
   run_sanity_checks(estimates, summary, cfg$alpha)
   print_highlights(summary)
   cat(sprintf("\nWritten to %s\n", cfg$out_dir))
+  cat(sprintf("Total run time: %s\n", format_elapsed(start)))
 }
 
 

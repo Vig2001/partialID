@@ -38,9 +38,9 @@ Both scripts stop if the clone is at another commit or their scripts are edited.
 - `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights). Old ZSB/NIW helpers and plots are archived in `scripts_misc/outdated_help/`.
 - `src/plotting/`: figure code (`toy_sim_plots.py` for the toy).
 - `src/outputs/<script>/`: results and figures written by each script.
-- `R/causal_sim.R`: two observational studies from the Dorn, Guo & Kallus continuous DGP (different n and Λ); compares calibrated intersection, single-study and convex split CIs. Explained in `partialID_Overleaf/Notes/Project_Notes/causal_sim_code_explained.tex`.
+- `R/causal_sim.R`: two observational studies from the Dorn, Guo & Kallus DGP (different n and Λ), each with a binary and a continuous outcome; compares calibrated intersection, single-study and convex split CIs. Explained in `partialID_Overleaf/Notes/Project_Notes/causal_sim_code_explained.tex`.
 - `R/dgk_replication.R`: runs DGK's own simulation (paper Section 7.1) unmodified and compares it with their committed results.
-- `R/helpers/`: `dgk.R` (DGK's data generation, nuisances and `dvds.continuous()`, used as is), `dgp.R` (folds, closed-form bounds), `ci_methods.R` and `mc_metrics.R` (ports of the Python modules).
+- `R/helpers/`: `dgk.R` (DGK's data generation, nuisances, `dvds.binary()` and `dvds.continuous()`, used as is), `data_fusion_design.R` (our two-study design: folds, true bands: closed form for continuous, Monte Carlo for binary), `run_time.R`, `ci_methods.R` and `mc_metrics.R` (ports of the Python modules).
 
 ### Structure (Python and R)
 The DVDS simulation is written in R (`R/`, `renv.lock`). Stata's `clrbound` (through `RStata`) may be added later; `R/stata/` doesn't exist yet. Python stays in `src/`; R has its own top-level folder; all outputs go to `src/outputs/<script>/`, so provenance and `/update-paper-figs` work the same for both languages.
@@ -98,7 +98,7 @@ Rscript R/causal_sim.R --summarise-only   # recompute CIs from saved estimates.c
 caffeinate -is Rscript R/causal_sim.R     # keep a Mac awake (plugged in, lid open)
 ```
 
-Replicates run in parallel (default: available cores minus 1; one grf thread per worker); results do not depend on the number of workers. The default Λ grid is DGK's, `seq(1, 3, length.out = 20)`. On a 10-core M4, 1000 replicates take about 85 min. Outputs: `estimates.csv` (gitignored), `summary.csv`, `single_study_coverage.csv` and `run_info.txt` in `src/outputs/causal_sim/`.
+Replicates run in parallel (default: available cores minus 1; one grf thread per worker); results do not depend on the number of workers. The default Λ grid is DGK's, `seq(1, 3, length.out = 20)`. On a 10-core M4, 1000 replicates take about 105 min (both outcomes); the total run time is printed at the end and recorded in `run_info.txt`. Outputs: `estimates.csv` (gitignored), `summary.csv` (per outcome, Λ pair and method), `true_bands.csv`, `single_study_coverage.csv` and `run_info.txt` in `src/outputs/causal_sim/`.
 
 To replicate DGK's own simulation (about 40 min; their settings: seed 1, 1000 replicates, n = 1000):
 

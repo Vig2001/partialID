@@ -1,13 +1,15 @@
 # DGK's simulation code (Dorn, Guo and Kallus; 2025, Section 7.1), used as
 # is. Their repository is cloned at a pinned commit in external/ (README).
 # Data generation and nuisance fits are copied verbatim from their
-# dvds_sim.R (line numbers cited); the DVDS estimator is their
-# dvds.continuous(), sourced unmodified from simplified_dvds.R.
+# dvds_sim.R (line numbers cited); the DVDS estimators are their
+# dvds.binary() and dvds.continuous(), sourced unmodified from
+# simplified_dvds.R.
 
 DGK_DIR <- file.path("external", "DoublyValidDoublySharpSensitivity")
+DGK_URL <- "https://github.com/CausalML/DoublyValidDoublySharpSensitivity"
 DGK_COMMIT <- "26cbbf6e90dcd0648c837c0d58568375291dd522"  # 2024-03-22
 DGK_SCRIPTS <- c("dvds_sim.R", "simplified_dvds.R", "dvds_plotting.r")
-DGK_ALPHA <- 0.05  # Default alpha of dvds.continuous(); sets its CI width.
+DGK_ALPHA <- 0.05  # Default alpha of dvds.binary/continuous(); sets CI width.
 GRF_FORESTS <- c("probability_forest", "regression_forest", "quantile_forest")
 MIN_ARM_SIZE <- 20  # Fewest treated or control units for which forests are fit.
 
@@ -38,9 +40,7 @@ git_dgk <- function(...) {
 check_clone <- function() {
   check_dgk_packages()
   if (!dir.exists(DGK_DIR)) {
-    stop(sprintf("clone not found; run: git clone %s %s",
-                 "https://github.com/CausalML/DoublyValidDoublySharpSensitivity",
-                 DGK_DIR))
+    stop(sprintf("clone not found; run: git clone %s %s", DGK_URL, DGK_DIR))
   }
   head <- git_dgk("rev-parse", "HEAD")
   if (!identical(head, DGK_COMMIT)) {
@@ -77,11 +77,8 @@ load_dgk <- function(num_threads = NULL) {
 
 #' Draws one study from the DGK DGP: dvds_sim.R lines 23-26, verbatim.
 #'
-#' Ybinary is drawn and discarded so that the use of random numbers matches
-#' theirs.
-#'
 #' @param n Sample size.
-#' @return List with X (n x 5), Z (0/1) and Y (continuous outcome).
+#' @return List with X (n x 5), Z (0/1), Ybinary (0/1) and Ycontin.
 simulate_dgk <- function(n) {
   if (n < 2) stop(sprintf("n must be >= 2, got n = %s", n))
   d = 5
@@ -89,48 +86,78 @@ simulate_dgk <- function(n) {
   Z = rbinom(n, 1, 1/(1 + exp(X[,1] + 0.5*(X[,2]>0) + 0.5*X[,2]*X[,3])))
   Ybinary = rbinom(n, 1, 1/(1 + exp(0.5*X[,1] + X[,2] + 0.25*X[,2]*X[,3])))
   Ycontin = 2*sign(X[,1]) + X[,2] + X[,2]*X[,3] + (1 + X[,4]^2)*rnorm(n)
-  list(X = X, Z = Z, Y = Ycontin)
+  list(X = X, Z = Z, Ybinary = Ybinary, Ycontin = Ycontin)
 }
 
 
-#' Propensity and arm-wise outcome means, all out-of-bag where in sample.
+#' Shared nuisances: dvds_sim.R lines 29-42, verbatim.
 #'
-#' dvds_sim.R lines 29, 30 (continuous part), 33-34 and 39-42, verbatim.
-#' Their binary-outcome forests (lines 31-32) are not fitted.
+#' Propensity score e, and arm-wise outcome means for both outcomes
+#' (probability forests for the binary outcome, regression forests for the
+#' continuous one); out-of-bag predictions in sample.
 #'
+#' @param study List from simulate_dgk() (or a fold of it).
 #' @param dgk Environment from load_dgk(), which supplies the forests.
-#' @return List with e, mu0 and mu1, each of length n.
-dgk_nuisances <- function(X, Z, Ycontin, dgk) {
+#' @return Environment holding e, mu0binary, mu1binary, mu0contin, mu1contin.
+dgk_nuisances <- function(study, dgk) {
   scope <- new.env(parent = dgk)
-  scope$X <- X
-  scope$Z <- Z
-  scope$Ycontin <- Ycontin
-  scope$n <- length(Z)
+  for (name in c("X", "Z", "Ybinary", "Ycontin")) scope[[name]] <- study[[name]]
+  scope$n <- length(study$Z)
   local({
     e = predict(probability_forest(X=X, Y=factor(Z)))$prediction[,"1"]
-    mu0contin = mu1contin = numeric(n)
+    mu0binary = mu1binary = mu0contin = mu1contin = numeric(n)
+    fit0binary = probability_forest(X = X[Z==0,], Y = factor(Ybinary[Z==0]))
+    fit1binary = probability_forest(X = X[Z==1,], Y = factor(Ybinary[Z==1]))
     fit0contin = regression_forest(X = X[Z==0,], Y = Ycontin[Z==0])
     fit1contin = regression_forest(X = X[Z==1,], Y = Ycontin[Z==1])
+    mu0binary[Z==0] = predict(fit0binary)$predictions[,"1"]
+    mu0binary[Z==1] = predict(fit0binary, X[Z==1,])$predictions[,"1"]
+    mu1binary[Z==0] = predict(fit1binary, X[Z==0,])$predictions[,"1"]
+    mu1binary[Z==1] = predict(fit1binary)$predictions[,"1"]
     mu0contin[Z==0] = predict(fit0contin)$predictions
     mu0contin[Z==1] = predict(fit0contin, X[Z==1,])$predictions
     mu1contin[Z==0] = predict(fit1contin, X[Z==0,])$predictions
     mu1contin[Z==1] = predict(fit1contin)$predictions
   }, envir = scope)
-  list(e = scope$e, mu0 = scope$mu0contin, mu1 = scope$mu1contin)
+  # Their code divides by e and 1 - e without a check.
+  stopifnot(all(scope$e > 0 & scope$e < 1))
+  scope
 }
 
 
-#' DVDS estimates of the sharp ATE bounds and their variances, per Lambda.
+#' Bounds and variances from a DGK output table.
 #'
-#' Calls DGK's dvds.continuous(). It returns bounds and CIs, not variances;
-#' its CI is mean -/+ z sd / sqrt(n) with z = qnorm(1 - DGK_ALPHA / 2), so
-#' the variance of each bound is recovered exactly as ((CI - mean) / z)^2.
+#' Their CIs are mean -/+ z sd / sqrt(n) with z = qnorm(1 - DGK_ALPHA / 2),
+#' so each variance is recovered exactly as ((CI - mean) / z)^2.
 #'
-#' @param study List with X, Z and Y.
+#' @param out Output of dvds.continuous() or the stacked dvds.binary() rows.
+#' @return data.frame with outcome, lambda_index, lambda, lower, upper,
+#'   s2_lower, s2_upper and n.
+bounds_from_dgk <- function(out, outcome, n) {
+  z <- qnorm(1 - DGK_ALPHA / 2)
+  data.frame(
+    outcome = outcome,
+    lambda_index = seq_len(nrow(out)),
+    lambda = out$Lambda,
+    lower = out$lower,
+    upper = out$upper,
+    s2_lower = ((out$lower - out$lower.CI) / z)^2,
+    s2_upper = ((out$upper.CI - out$upper) / z)^2,
+    n = n
+  )
+}
+
+
+#' DVDS estimates of the sharp ATE bounds and their variances, per Lambda,
+#' for the binary and the continuous outcome.
+#'
+#' Calls DGK's dvds.binary() (one Lambda at a time, as in dvds_sim.R lines
+#' 45-49) and dvds.continuous() (all Lambdas at once, line 54).
+#'
+#' @param study List from simulate_dgk() (or a fold of it).
 #' @param lambdas Sensitivity parameters, each >= 1.
 #' @param num_threads grf threads per forest; NULL uses every core.
-#' @return data.frame, one row per Lambda: lambda_index, lambda, lower,
-#'   upper, s2_lower, s2_upper and n.
+#' @return data.frame, one row per (outcome, Lambda); see bounds_from_dgk().
 dvds_bounds <- function(study, lambdas, num_threads = NULL) {
   validate_lambdas(lambdas)
   if (min(sum(study$Z), sum(1 - study$Z)) < MIN_ARM_SIZE) {
@@ -138,20 +165,15 @@ dvds_bounds <- function(study, lambdas, num_threads = NULL) {
                  MIN_ARM_SIZE, sum(study$Z), sum(1 - study$Z)))
   }
   dgk <- load_dgk(num_threads)
-  nu <- dgk_nuisances(study$X, study$Z, study$Y, dgk)
-  # Their code divides by e and 1 - e without a check.
-  stopifnot(all(nu$e > 0 & nu$e < 1))
-  out <- dgk$dvds.continuous(X = study$X, Y = study$Y, Z = study$Z,
-                             mu0 = nu$mu0, mu1 = nu$mu1, e = nu$e,
-                             Lambdas = lambdas)
-  z <- qnorm(1 - DGK_ALPHA / 2)
-  data.frame(
-    lambda_index = seq_along(lambdas),
-    lambda = out$Lambda,
-    lower = out$lower,
-    upper = out$upper,
-    s2_lower = ((out$lower - out$lower.CI) / z)^2,
-    s2_upper = ((out$upper.CI - out$upper) / z)^2,
-    n = length(study$Y)
-  )
+  nu <- dgk_nuisances(study, dgk)
+  binary <- do.call(rbind, lapply(lambdas, function(l) {
+    dgk$dvds.binary(Y = study$Ybinary, Z = study$Z, mu0 = nu$mu0binary,
+                    mu1 = nu$mu1binary, e = nu$e, Lambda = l)
+  }))
+  continuous <- dgk$dvds.continuous(
+    X = study$X, Y = study$Ycontin, Z = study$Z, mu0 = nu$mu0contin,
+    mu1 = nu$mu1contin, e = nu$e, Lambdas = lambdas)
+  n <- length(study$Z)
+  rbind(bounds_from_dgk(binary, "binary", n),
+        bounds_from_dgk(continuous, "continuous", n))
 }

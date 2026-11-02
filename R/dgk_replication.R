@@ -21,6 +21,8 @@ if (!file.exists(file.path("R", "dgk_replication.R"))) {
   stop("run from the repo root: Rscript R/dgk_replication.R")
 }
 source(file.path("R", "helpers", "dgk.R"))  # DGK_DIR, DGK_COMMIT, check_clone
+source(file.path("R", "helpers", "data_fusion_design.R"))  # true_bands()
+source(file.path("R", "helpers", "run_time.R"))  # format_elapsed
 
 DGK_OUTPUT <- file.path("Simulations", "dvds_output")
 RESULT_FILES <- c("binary_dvds.csv", "binary_zsb.csv", "continuous_dvds.csv",
@@ -29,7 +31,6 @@ RESULT_FILES <- c("binary_dvds.csv", "binary_zsb.csv", "continuous_dvds.csv",
                   file.path("art", "binary_comparison.pdf"),
                   file.path("art", "continuous_comparison.pdf"))
 OUT_DIR <- file.path("src", "outputs", "dgk_replication")
-TRUTH_MC_SIZE <- 500000  # As in dvds_plotting.r (binary truth by simulation).
 Z_FLAG <- 3  # |z| above which a run-to-run difference is reported.
 
 
@@ -58,30 +59,15 @@ run_dgk_script <- function(script) {
 
 
 # ----------------------------- comparison ------------------------------
-#' True sharp bounds per (outcome, Lambda), computed as in dvds_plotting.r.
+#' True sharp bounds per (outcome, Lambda), as in dvds_plotting.r.
 #'
-#' Continuous: closed form. Binary: Monte Carlo over X, with set.seed(1) as
-#' in their script, so both runs are judged against the same truth.
+#' Continuous: closed form. Binary: Monte Carlo over X with their seed, so
+#' both runs are judged against the same truth (true_bands() in
+#' R/helpers/data_fusion_design.R).
 true_bounds <- function(lambdas) {
-  k <- (1 + 1 / 3) * (lambdas^2 - 1) / lambdas *
-    dnorm(qnorm(lambdas / (lambdas + 1)))
-  continuous <- data.frame(outcome = "continuous", Lambda = lambdas,
-                           true_lower = -k, true_upper = k)
-  set.seed(1)
-  X <- matrix(runif(TRUTH_MC_SIZE * 5, -1, 1), nrow = TRUTH_MC_SIZE)
-  e <- 1 / (1 + exp(X[, 1] + 0.5 * (X[, 2] > 0) + 0.5 * X[, 2] * X[, 3]))
-  mu <- 1 / (1 + exp(0.5 * X[, 1] + X[, 2] + 0.25 * X[, 2] * X[, 3]))
-  upper <- sapply(lambdas, function(l) {
-    mean(e * mu + (1 - e) * pmin(1 - 1 / l + mu / l, mu * l)) -
-      mean((1 - e) * mu + e * pmax(1 - l + mu * l, mu / l))
-  })
-  lower <- sapply(lambdas, function(l) {
-    mean(e * mu + (1 - e) * pmax(1 - l + mu * l, mu / l)) -
-      mean((1 - e) * mu + e * pmin(1 - 1 / l + mu / l, mu * l))
-  })
-  binary <- data.frame(outcome = "binary", Lambda = lambdas,
-                       true_lower = lower, true_upper = upper)
-  rbind(continuous, binary)
+  truth <- true_bands(lambdas)
+  data.frame(outcome = truth$outcome, Lambda = truth$lambda,
+             true_lower = truth$lower, true_upper = truth$upper)
 }
 
 
@@ -184,9 +170,8 @@ write_run_info <- function(path, start, ran) {
     sprintf("projectone git: %s", ours),
     sprintf("DGK commit: %s (unmodified dvds_sim.R, dvds_plotting.r)",
             DGK_COMMIT),
-    sprintf("settings: DGK's own (set.seed(1), 1000 reps, n = 1000, 20 Lambdas)"),
-    if (ran) sprintf("run time: %.1f min",
-                     as.numeric(difftime(Sys.time(), start, units = "mins")))
+    "settings: DGK's own (set.seed(1), 1000 reps, n = 1000, 20 Lambdas)",
+    if (ran) sprintf("run time: %s", format_elapsed(start))
     else "run time: comparison only (--check-only)",
     R.version.string,
     paste(sprintf("%s %s", packages, versions), collapse = " | "))
@@ -223,6 +208,7 @@ main <- function() {
             row.names = FALSE)
   print_comparison(comparison, folders)
   cat(sprintf("\nWritten to %s\n", OUT_DIR))
+  cat(sprintf("Total run time: %s\n", format_elapsed(start)))
 }
 
 

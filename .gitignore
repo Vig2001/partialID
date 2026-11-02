@@ -32,3 +32,6 @@ src/outputs/**/*.npz
 src/outputs/causal_sim/estimates.csv
 # Third-party code, cloned at a pinned commit (see README)
 external/
+# DGK replication: their outputs (no licence) and our large rerun CSVs
+src/outputs/dgk_replication/original/
+src/outputs/dgk_replication/replication/*.csv
