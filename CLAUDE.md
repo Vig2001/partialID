@@ -36,16 +36,16 @@ will need to store in a separate public_data folder.
 
 ## Paper conventions
 
-- Citations: `\citet{}` in text, `\citep{}` in parentheses
+- Citations: the paper uses `natbib` with `\bibliographystyle{plainnat}` (author–year); `\citet{}` in text, `\citep{}` in parentheses, never bare `\cite{}`
 - Notation: [To add later]
 - Spelling: British English
 
 ## Current state
 
-- Methods: Proposed convex combination method which I am stress-testing and proving theorems
-- Simulations: `toy_sim.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/toy_sim/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like. Slide versions of the toy figures and the width table come from `python -m src.latex.toy_sim_slide_figs` (reads `results.csv`, no new simulation); copies with provenance live in `partialID_Overleaf/Figures/toy_sim/` and `Tables/toy_sim/`.
+- Methods: Proposed convex combination method which I am stress-testing and proving theorems. Brieuc's shorter proof of Prop 4.2 (`prop42_proof.pdf`) is under review; notes in `quality_reports/reviews/2026-11-02_prop42-proof-notes.md` (open: keep Remark 2 or not).
+- Simulations: `toy_sim.py` is a known-true-band toy comparing intersection with convex (oracle, split, plug-in); results in `src/outputs/toy_sim/`. The split convex CI is valid; the intersection CI undercovers at small gaps, so width comparisons with it are not like-for-like. Slide versions of the toy figures and the width table come from `python -m src.latex.toy_sim_slide_figs` (reads `results.csv`, no new simulation); copies with provenance live in `partialID_Overleaf/Figures/toy_sim/` and `Tables/toy_sim/`. The paper's width table now shows the MC s.e. of each mean width (`--with-mcse`, two-line cells); the paper copy is `Tables/toy_sim/width_coverage_calibrated_mcse_wip.tex` until the code is committed and rerun.
 - Code follows AGENTS.md: CIs in `src/helpers/ci_methods.py`, MC summaries in `src/helpers/mc_metrics.py`, plots in `src/plotting/toy_sim_plots.py`; run with `python -m src.toy_sim`. No `tests/` yet.
-- Next simulation: two independent OS datasets from the Dorn, Guo & Kallus (DVDS) DGP; draft plan in `quality_reports/plans/2026-10-28_dvds-simulation.md`. Old ZSB/NIW code is archived in `scripts_misc/outdated_help/` (not used by `src/`).
+- Next simulation: two independent OS datasets from the Dorn, Guo & Kallus (DVDS) DGP; draft plan in `quality_reports/plans/2026-10-28_dvds-simulation.md`. DGK's DGP and the closed-form continuous true band are written up in `partialID_Overleaf/Results/Causal Simulations/dvds_sim_explained.tex`; the binary case is still to do. Old ZSB/NIW code is archived in `scripts_misc/outdated_help/` (not used by `src/`).
 - R/Stata: the DVDS simulation will most likely be in R, in a top-level `R/` folder (`R/stata/` for `clrbound` `.do` files via RStata), with packages pinned by `renv` and outputs in `src/outputs/<script>/`; layout in README "Planned structure". The folder isn't created yet. Draft Python CLR two-source estimator in `quality_reports/plans/2026-10-30_clr-implementation-draft.md`.
 
 ## Skills
@@ -72,4 +72,5 @@ Agents (in `.claude/agents/`): code-reviewer, proofreader, methods-reviewer, cit
 - Don't call a valid CI "wider" or "rarely narrower" than one that undercovers; width comparisons only make sense between methods with valid coverage.
 - Each new talk gets its own folder inside `Slides/`; never put a talk's `.tex` directly in `Slides/`.
 - Respect each section's stated assumptions: in the known-variance Gaussian section, never suggest replacing $\sigma_k^2$ with an estimate.
+- Write derivations in the paper as connected prose between displays, never with bold "Step 1, Step 2, …" or "Result." headings.
 - In the paper use the Methods notation, not code names: weights $\omega_0$ (lower) and $\omega_1$ (upper), oracle $\omega^{\star}$, population bounds $L_k, U_k$ (not `w_L`, `w_U`, $L^*_k$).

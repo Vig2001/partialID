@@ -4,11 +4,13 @@ Does not rerun the simulation: run `python -m src.toy_sim` first.
 
 Usage, from the repo root:
     python -m src.latex.toy_sim_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
-        [--table-ratios 1 2 5] [--with-calibrated]
+        [--table-ratios 1 2 5] [--with-calibrated] [--with-mcse]
 Outputs, in src/outputs/toy_sim/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, naive intersection vs split
     width_coverage_small_gaps.tex       table rows for the width slide, or
-    width_coverage_small_gaps_calibrated.tex  with an M6 column after M1
+    width_coverage_small_gaps_calibrated.tex  with an M6 column after M1;
+    either name gets an _mcse suffix with --with-mcse (MC s.e. of each width
+    on a second line in the cell)
 """
 
 import argparse
@@ -51,12 +53,21 @@ def plot_joint_coverage(
     )
 
 
-def table_cell(row: pd.Series, nominal: float) -> str:
-    """'width (coverage)', with coverage in \\undercov{} if clearly low."""
+def table_cell(row: pd.Series, nominal: float, with_mcse: bool = False) -> str:
+    """'width (coverage)', with coverage in \\undercov{} if clearly low.
+
+    With with_mcse, the cell has a second line in small type giving the Monte
+    Carlo standard error of the width, '$\\pm$ mcse'. The two lines sit in a
+    nested tabular so each column stays as wide as without the error.
+    """
     cov = f"{row.cov_joint:.3f}"
     if row.cov_joint < nominal - UNDERCOVER_SES * row.cov_joint_mcse:
         cov = rf"\undercov{{{cov}}}"
-    return f"{row.width:.3f} ({cov})"
+    cell = f"{row.width:.3f} ({cov})"
+    if not with_mcse:
+        return cell
+    mcse = rf"{{\scriptsize $\pm$\,{row.width_mcse:.3f}}}"
+    return rf"\begin{{tabular}}[t]{{@{{}}c@{{}}}}{cell}\\[-3pt] {mcse}\end{{tabular}}"
 
 
 def width_table_rows(
@@ -65,12 +76,14 @@ def width_table_rows(
     ratios: Sequence[float],
     cfg: toy_sim.ToyConfig,
     methods: Sequence[str] = TABLE_METHODS,
+    with_mcse: bool = False,
 ) -> str:
     """LaTeX tabular rows: r, g, then width (coverage) per method in methods.
 
     Uses the equal-gap cells g_L = g_U = g. Rows are grouped by r, with r
     printed on the first row of each group. The slide must define
-    \\undercov, \\splitcol and \\plugincol (one argument each).
+    \\undercov, \\splitcol and \\plugincol (one argument each). With
+    with_mcse, each width is followed by its Monte Carlo standard error.
     """
     nominal = 1 - cfg.alpha
     lines = []
@@ -82,7 +95,9 @@ def width_table_rows(
             row = [f"{r:g}" if k == 0 else "", f"{g:g}"]
             for method in methods:
                 macro = TABLE_CELL_MACROS.get(method, "")
-                cell = table_cell(cells[cells.method == method].iloc[0], nominal)
+                cell = table_cell(
+                    cells[cells.method == method].iloc[0], nominal, with_mcse
+                )
                 row.append(f"{macro}{{{cell}}}" if macro else cell)
             lines.append(" & ".join(row) + r" \\")
         lines.append(r"\addlinespace")
@@ -104,6 +119,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--with-calibrated", action="store_true",
                         help="Add a calibrated intersection (M6) column after "
                              "M1, written to a separate _calibrated table.")
+    parser.add_argument("--with-mcse", action="store_true",
+                        help="Add each mean width's Monte Carlo standard "
+                             "error on a second line in its cell, written to "
+                             "a separate _mcse table.")
     parser.add_argument("--out-dir", type=Path, default=None,
                         help="Output directory; defaults to the results' one.")
     return parser.parse_args(argv)
@@ -125,11 +144,13 @@ def main() -> None:
         methods, table_name = TABLE_METHODS_CALIBRATED, "_calibrated"
     else:
         methods, table_name = TABLE_METHODS, ""
+    if args.with_mcse:
+        table_name += "_mcse"
     table_path = out_dir / f"width_coverage_small_gaps{table_name}.tex"
     table_path.write_text(
         "% Written by python -m src.latex.toy_sim_slide_figs from results.csv\n"
         + width_table_rows(df, args.table_gaps, args.table_ratios, cfg,
-                           methods)
+                           methods, args.with_mcse)
     )
     print(f"Written to {fig_path}\nWritten to {table_path}")
 
