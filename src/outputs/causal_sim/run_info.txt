@@ -1,9 +1,11 @@
-date: 2026-11-02 16:11
-git: 4406e4a-dirty
-command: Rscript R/dvds_sim.R 
+date: 2026-11-02 20:38
+git: 96e6126
+DGK commit: 26cbbf6e90dcd0648c837c0d58568375291dd522 (estimator and DGP code, unmodified)
+command: Rscript R/causal_sim.R 
 seed: 1 | reps: 1000 | n: 2000, 500 | frac_a: 0.3 | alpha: 0.05
-lambdas: 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3
+outcomes: binary, continuous
+lambdas: 1, 1.10526315789474, 1.21052631578947, 1.31578947368421, 1.42105263157895, 1.52631578947368, 1.63157894736842, 1.73684210526316, 1.84210526315789, 1.94736842105263, 2.05263157894737, 2.15789473684211, 2.26315789473684, 2.36842105263158, 2.47368421052632, 2.57894736842105, 2.68421052631579, 2.78947368421053, 2.89473684210526, 3
 backend: multisession | workers: 9
-run time: 85.7 min
+simulation run time: 1 h 54 min 53 s
 R version 4.6.1 (2026-06-24)
-grf 2.6.1 | future 1.80.0 | future.apply 1.21.0 | progressr 1.1.0 | optparse 1.8.2
+grf 2.6.1 | dplyr 1.2.1 | future 1.80.0 | future.apply 1.21.0 | progressr 1.1.0 | optparse 1.8.2

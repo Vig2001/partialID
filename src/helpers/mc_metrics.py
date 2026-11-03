@@ -23,7 +23,10 @@ def mean_se(x: np.ndarray) -> tuple[float, float]:
 def summarise_ci(
     ci: ci_methods.CIResult, true_lo: float, true_hi: float, theta: float
 ) -> dict[str, float]:
-    """Coverage, width, bias and weight summaries for one method in one cell.
+    """Coverage, CI width, estimated band width, bias and weight summaries.
+
+    One method in one cell. The estimated band width is U_hat - L_hat, the
+    width of the fused bound estimates without the sampling margin.
 
     Each per-replicate quantity q gives columns q (mean) and q_mcse (Monte
     Carlo SE).
@@ -44,6 +47,7 @@ def summarise_ci(
         cov_hi=ci.hi >= true_hi,
         cov_theta=(ci.lo <= theta) & (ci.hi >= theta),
         width=width,
+        band_width=ci.U_hat - ci.L_hat,
         bias_L=ci.L_hat - true_lo,
         bias_U=ci.U_hat - true_hi,
         wL=ci.w_L,

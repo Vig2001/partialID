@@ -15,9 +15,11 @@ mean_se <- function(x) {
 }
 
 
-#' Coverage, width, bias and weight summaries for one method in one cell.
+#' Coverage, CI width, estimated band width, bias and weight summaries.
 #'
-#' Each per-replicate quantity q gives columns q (mean) and q_mcse.
+#' One method in one cell. The estimated band width is U_hat - L_hat, the
+#' width of the fused bound estimates without the sampling margin. Each
+#' per-replicate quantity q gives columns q (mean) and q_mcse.
 #'
 #' @param ci List with lo, hi, L_hat, U_hat, w_L, w_U (see ci_methods.R).
 #' @param true_lo,true_hi Ends of the true band.
@@ -31,6 +33,7 @@ summarise_ci <- function(ci, true_lo, true_hi, theta) {
     cov_hi = ci$hi >= true_hi,
     cov_theta = ci$lo <= theta & ci$hi >= theta,
     width = width,
+    band_width = ci$U_hat - ci$L_hat,
     bias_L = ci$L_hat - true_lo,
     bias_U = ci$U_hat - true_hi,
     wL = ci$w_L,

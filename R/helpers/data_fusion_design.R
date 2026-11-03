@@ -21,6 +21,35 @@ validate_lambdas <- function(lambdas) {
 }
 
 
+#' Conditional mean of DGK's continuous outcome, m(x) (dvds_sim.R line 26).
+continuous_mean <- function(X) {
+  2 * sign(X[, 1]) + X[, 2] + X[, 2] * X[, 3]
+}
+
+
+#' Draws one study: DGK's DGP, with the continuous outcome noise scaled.
+#'
+#' Calls DGK's verbatim simulate_dgk() and then rescales the noise around
+#' m(X), so Y = m(X) + noise_scale (1 + X4^2) eps. The random draws are
+#' identical to DGK's, and noise_scale = 1 returns their study unchanged.
+#' The binary outcome, the covariates and the treatment are untouched.
+#'
+#' @param n Sample size.
+#' @param noise_scale Multiplier c > 0 of the continuous outcome's noise.
+#' @return List with X, Z, Ybinary and Ycontin, as simulate_dgk().
+simulate_study <- function(n, noise_scale = 1) {
+  if (!(is.finite(noise_scale) && noise_scale > 0)) {
+    stop(sprintf("noise_scale must be positive, got %s", noise_scale))
+  }
+  study <- simulate_dgk(n)
+  if (noise_scale != 1) {
+    m <- continuous_mean(study$X)
+    study$Ycontin <- m + noise_scale * (study$Ycontin - m)
+  }
+  study
+}
+
+
 #' Restricts a study to the units indexed by idx.
 subset_study <- function(study, idx) {
   list(X = study$X[idx, , drop = FALSE], Z = study$Z[idx],
@@ -50,13 +79,16 @@ k_lambda <- function(lambdas) {
 }
 
 
-#' Sharp ATE bounds, continuous outcome: [-(4/3) K_Lambda, (4/3) K_Lambda].
+#' Sharp ATE bounds, continuous outcome: [-c (4/3) K_Lambda, c (4/3) K_Lambda].
 #'
-#' Same formula as DGK's dvds_plotting.r ("true_upper", "true_lower").
+#' Same formula as DGK's dvds_plotting.r ("true_upper", "true_lower") when
+#' c = 1. Scaling the noise by c scales sigma(x), and hence the CVaR term and
+#' the band, by c (causal_sim.tex, continuous derivation).
 #'
+#' @param noise_scale Multiplier c of the outcome noise (simulate_study()).
 #' @return data.frame with columns lambda, lower and upper.
-continuous_true_band <- function(lambdas) {
-  half_width <- MEAN_SIGMA * k_lambda(lambdas)
+continuous_true_band <- function(lambdas, noise_scale = 1) {
+  half_width <- noise_scale * MEAN_SIGMA * k_lambda(lambdas)
   data.frame(lambda = lambdas, lower = -half_width, upper = half_width)
 }
 
@@ -110,10 +142,12 @@ binary_true_band <- function(lambdas) {
 #' Sharp ATE bounds for both outcomes, one row per (outcome, Lambda).
 #'
 #' @param lambdas Sensitivity parameters; lambda_index is their position.
+#' @param noise_scale Multiplier of the continuous outcome noise; the binary
+#'   band does not depend on it.
 #' @return data.frame with outcome, lambda_index, lambda, lower, upper,
 #'   lower_mcse and upper_mcse (0 for the closed-form continuous band).
-true_bands <- function(lambdas) {
-  continuous <- continuous_true_band(lambdas)
+true_bands <- function(lambdas, noise_scale = 1) {
+  continuous <- continuous_true_band(lambdas, noise_scale)
   continuous$lower_mcse <- 0
   continuous$upper_mcse <- 0
   rbind(

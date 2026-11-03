@@ -6,14 +6,17 @@ is exactly the true band. We compare the naive intersection CI with the convex
 combination CI (oracle weights; sample-split weights; no split, i.e. weights
 and CI from the same data), and with a calibrated intersection CI that uses
 z = Phi^{-1}(1 - alpha / 4): Bonferroni over 2 datasets x 2 ends, so it is
-valid whichever dataset attains each end.
+valid whichever dataset attains each end. A cross-fitted convex CI (K = 5
+folds: weights from the other folds, bounds from each fold, averaged) removes
+the split method's loss of evaluation data.
 
 Usage, from the repo root:
     python -m src.toy_sim [--seed 7] [--reps 5000] [--frac-a 0.3] [--no-plots]
 
 Plans: quality_reports/plans/2026-10-09_band-toy-simulation.md,
        quality_reports/plans/2026-10-11_band-toy-refactor.md,
-       quality_reports/plans/2026-10-27_calibrated-intersection.md
+       quality_reports/plans/2026-10-27_calibrated-intersection.md,
+       quality_reports/plans/2026-11-03_toy-cross-fit.md
 Outputs: src/outputs/toy_sim/
 """
 
@@ -44,6 +47,8 @@ M4 = "M4 convex (no split)"
 M5_D1 = "M5 dataset 1 only"
 M5_D2 = "M5 dataset 2 only"
 M6 = "M6 intersection (calibrated)"
+M7 = "M7 convex (cross-fit, K=5)"
+CROSS_FIT_FOLDS = {M7: 5}  # number of folds K per cross-fit method
 PLOT_METHODS = (M1, M2, M3, M4)
 
 
@@ -74,7 +79,7 @@ class ToyConfig:
     frac_a: float = 0.3
     reps: int = 5000
     gaps: tuple[float, ...] = (0.0, 0.05, 0.1, 0.2, 0.5, 1.0)
-    ratios: tuple[float, ...] = (1, 2, 5, 10)
+    ratios: tuple[float, ...] = (1, 2, 3, 4, 5)
 
     def __post_init__(self):
         if not 0 < self.alpha < 1:
@@ -191,6 +196,35 @@ def plug_in_weights(
     return w_L, w_U
 
 
+def cross_fit_ci(
+    Y: Sequence[np.ndarray], params: DGPParams, cfg: ToyConfig, n_folds: int
+) -> ci_methods.CIResult:
+    """Cross-fitted convex CI with K = n_folds folds per dataset.
+
+    For each fold, the weights come from the other folds, with variances
+    scaled to the full-sample size (the size of the final CI's variance);
+    the bounds come from the fold itself. Rows are i.i.d., so contiguous
+    column blocks are a random partition.
+    """
+    blocks = [np.array_split(np.arange(n_k), n_folds) for n_k in cfg.n]
+    L, U, s2, w_L, w_U = [], [], [], [], []
+    for k in range(n_folds):
+        held_out = [b[k] for b in blocks]
+        train = [np.setdiff1d(np.arange(n_k), h)
+                 for n_k, h in zip(cfg.n, held_out)]
+        fit = estimate_bounds([y[:, t] for y, t in zip(Y, train)],
+                              params.Delta, cfg.n)
+        w_L_k, w_U_k = plug_in_weights(fit, cfg.z)
+        held = estimate_bounds([y[:, h] for y, h in zip(Y, held_out)],
+                               params.Delta, [h.size for h in held_out])
+        L.append(held.L)
+        U.append(held.U)
+        s2.append(held.s2)
+        w_L.append(w_L_k)
+        w_U.append(w_U_k)
+    return ci_methods.cross_fit_convex_ci(L, U, s2, w_L, w_U, cfg.z)
+
+
 def ci_by_method(
     Y: Sequence[np.ndarray], params: DGPParams, cfg: ToyConfig
 ) -> tuple[dict[str, ci_methods.CIResult], tuple[float, float]]:
@@ -223,6 +257,8 @@ def ci_by_method(
             full.L, full.U, full.s2, cfg.z_calibrated
         ),
     }
+    for method, n_folds in CROSS_FIT_FOLDS.items():
+        cis[method] = cross_fit_ci(Y, params, cfg, n_folds)
     return cis, w_oracle
 
 
@@ -389,17 +425,25 @@ def _check_coverage_separable(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
                   f"max range {worst:.5f} (allowed {2 / cfg.reps:.5f})")]
 
 
-def _check_calibrated_valid(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
-    """M6 joint coverage is >= 1 - alpha in every cell (up to MC error)."""
-    m6 = df[df.method == M6]
+def _check_joint_coverage(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
+    """Joint coverage >= 1 - alpha in every cell (up to MC error).
+
+    Guaranteed for M6. For the cross-fitted methods it is not guaranteed
+    near ties (fold estimates and weights are dependent), so a FAIL there
+    is a finding, not a bug.
+    """
     nominal = 1 - cfg.alpha
-    # Cells with coverage 1 have MC SE 0 and give z = +inf, which passes.
-    zs = (m6.cov_joint - nominal) / m6.cov_joint_mcse
-    return [Check(
-        f"M6 joint coverage >= {nominal:g} in every cell",
-        zs.min() >= -3,
-        f"min coverage {m6.cov_joint.min():.4f}, min z = {zs.min():.2f} "
-        f"over {len(zs)} cells")]
+    checks = []
+    for method in (M6, *CROSS_FIT_FOLDS):
+        cells = df[df.method == method]
+        # Cells with coverage 1 have MC SE 0 and give z = +inf, which passes.
+        zs = (cells.cov_joint - nominal) / cells.cov_joint_mcse
+        checks.append(Check(
+            f"{method.split()[0]} joint coverage >= {nominal:g} in every cell",
+            zs.min() >= -3,
+            f"min coverage {cells.cov_joint.min():.4f}, min z = "
+            f"{zs.min():.2f} over {len(zs)} cells"))
+    return checks
 
 
 def run_sanity_checks(df: pd.DataFrame, cfg: ToyConfig) -> bool:
@@ -408,7 +452,7 @@ def run_sanity_checks(df: pd.DataFrame, cfg: ToyConfig) -> bool:
     for check_fn in (_check_closed_forms, _check_oracle_weights_at_tie,
                      _check_oracle_own_target,
                      _check_m1_matches_m2_at_large_gap,
-                     _check_coverage_separable, _check_calibrated_valid):
+                     _check_coverage_separable, _check_joint_coverage):
         checks.extend(check_fn(df, cfg))
     print("\nSanity checks")
     for check in checks:

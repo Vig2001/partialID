@@ -98,7 +98,18 @@ Rscript R/causal_sim.R --summarise-only   # recompute CIs from saved estimates.c
 caffeinate -is Rscript R/causal_sim.R     # keep a Mac awake (plugged in, lid open)
 ```
 
-Replicates run in parallel (default: available cores minus 1; one grf thread per worker); results do not depend on the number of workers. The default Λ grid is DGK's, `seq(1, 3, length.out = 20)`. On a 10-core M4, 1000 replicates take about 105 min (both outcomes); the total run time is printed at the end and recorded in `run_info.txt`. Outputs: `estimates.csv` (gitignored), `summary.csv` (per outcome, Λ pair and method), `true_bands.csv`, `single_study_coverage.csv` and `run_info.txt` in `src/outputs/causal_sim/`.
+The design of `quality_reports/plans/2026-11-03_convex-advantage-noise-design.md` scales study 2's continuous outcome noise by c = 2 and gives each study its own Λ grid:
+
+```
+caffeinate -is Rscript R/causal_sim.R --noise-scale-2 2 --lambdas-1 3:5:0.05 --lambdas-2 1:3:0.05 --out-dir src/outputs/causal_sim_noise
+```
+
+Replicates run in parallel (default: available cores minus 1; one grf thread per worker); results do not depend on the number of workers. The default Λ grid (both studies) is DGK's, `seq(1, 3, length.out = 20)`; `--lambdas-1` and `--lambdas-2` take comma-separated values or `from:to:by`. On a 10-core M4, 1000 replicates take about 105 min (both outcomes); the total run time is printed at the end and recorded in `run_info.txt`.
+
+Outputs, in `src/outputs/causal_sim/` (or `--out-dir`):
+- `summary.csv`: joint coverage, CI width, and estimated against true band width, per outcome, Λ pair and method, rounded.
+- `summary_full.csv`: every summary column (MC s.e., per-end coverage, bias, weights).
+- `estimates.csv` (gitignored), `true_bands.csv` (per study), `single_study_coverage.csv` and `run_info.txt`.
 
 To replicate DGK's own simulation (about 40 min; their settings: seed 1, 1000 replicates, n = 1000):
 

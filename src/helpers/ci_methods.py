@@ -3,11 +3,13 @@
 Each dataset k = 1, 2 gives estimated bounds L_k <= U_k with variances s2_k.
 The methods differ in how the two bands are fused:
     - intersection: the larger lower bound and the smaller upper bound;
-    - convex: w * bound_1 + (1 - w) * bound_2, with its own weight per end.
+    - convex: w * bound_1 + (1 - w) * bound_2, with its own weight per end;
+    - cross-fitted convex: convex bounds per fold, averaged over folds.
 Each end uses critical value z, so z = Phi^{-1}(1 - alpha / 2) gives a
 Bonferroni joint CI for the band.
 """
 
+from collections.abc import Sequence
 from typing import NamedTuple
 
 import numpy as np
@@ -140,4 +142,61 @@ def convex_ci(
         U_hat=U_hat,
         w_L=np.broadcast_to(w_L, L_hat.shape),
         w_U=np.broadcast_to(w_U, U_hat.shape),
+    )
+
+
+def cross_fit_convex_ci(
+    L: Sequence[np.ndarray],
+    U: Sequence[np.ndarray],
+    s2: Sequence[np.ndarray],
+    w_L: Sequence[np.ndarray],
+    w_U: Sequence[np.ndarray],
+    z: float,
+) -> CIResult:
+    """Cross-fitted convex CI: fold-wise convex bounds, averaged over K folds.
+
+    Fold k contributes w_k * bound_1k + (1 - w_k) * bound_2k, with weights
+    chosen on the other folds. The folds are disjoint, so the average of the
+    K fold bounds has variance (1 / K^2) * sum_k [w_k^2 s2_1k
+    + (1 - w_k)^2 s2_2k]. This treats each weight as fixed given its
+    training folds; it ignores the dependence between a fold's estimate
+    and the weights the other folds draw from it.
+
+    Args:
+        L: Per-fold lower bound estimates, each of shape (R, 2).
+        U: Per-fold upper bound estimates, each of shape (R, 2).
+        s2: Per-fold variances of the bound estimates, each of shape (R, 2).
+        w_L: Per-fold lower-end weights on dataset 1, each of shape (R,).
+        w_U: Per-fold upper-end weights on dataset 1, each of shape (R,).
+        z: Critical value for each end.
+
+    Returns:
+        CIResult with w_L and w_U averaged over folds.
+
+    Raises:
+        ValueError: If the folds disagree in number, or any fold fails the
+            checks of convex_ci.
+    """
+    n_folds = len(L)
+    if n_folds < 2 or not len(U) == len(s2) == len(w_L) == len(w_U) == n_folds:
+        raise ValueError(
+            f"need >= 2 folds and one entry per fold, got {len(L)=}, "
+            f"{len(U)=}, {len(s2)=}, {len(w_L)=}, {len(w_U)=}"
+        )
+    folds = [
+        convex_ci(L[k], U[k], s2[k], w_L[k], w_U[k], z)
+        for k in range(n_folds)
+    ]
+    L_hat = np.mean([f.L_hat for f in folds], axis=0)
+    U_hat = np.mean([f.U_hat for f in folds], axis=0)
+    # Each fold's convex_ci half-width is z * se_k.
+    var_L = np.sum([((f.L_hat - f.lo) / z) ** 2 for f in folds], axis=0)
+    var_U = np.sum([((f.hi - f.U_hat) / z) ** 2 for f in folds], axis=0)
+    return CIResult(
+        lo=L_hat - z * np.sqrt(var_L) / n_folds,
+        hi=U_hat + z * np.sqrt(var_U) / n_folds,
+        L_hat=L_hat,
+        U_hat=U_hat,
+        w_L=np.mean([f.w_L for f in folds], axis=0),
+        w_U=np.mean([f.w_U for f in folds], axis=0),
     )
