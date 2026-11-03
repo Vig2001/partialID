@@ -30,6 +30,7 @@ src/outputs/**/*.pkl
 src/outputs/**/*.npy
 src/outputs/**/*.npz
 src/outputs/causal_sim*/estimates.csv
+src/outputs/causal_sim*/summary_full.csv
 # Third-party code, cloned at a pinned commit (see README)
 external/
 # DGK replication: their outputs (no licence) and our large rerun CSVs
