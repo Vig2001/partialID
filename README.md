@@ -35,6 +35,7 @@ Both scripts stop if the clone is at another commit or their scripts are edited.
 
 ### Layout
 - `src/toy_sim.py`: known-true-band toy comparing the intersection CI with the convex combination CI.
+- `src/toy_convergence.py`: the split method's estimated band in the toy as n grows (separated, near-tie and exact-tie gaps).
 - `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights). Old ZSB/NIW helpers and plots are archived in `scripts_misc/outdated_help/`.
 - `src/plotting/`: figure code (`toy_sim_plots.py` for the toy).
 - `src/outputs/<script>/`: results and figures written by each script.
@@ -87,6 +88,7 @@ Run entry scripts as modules from the repo root with the environment active, e.g
 ```
 python -m src.toy_sim            # defaults: --seed 7 --reps 5000 --frac-a 0.3
 python -m src.toy_sim --help     # all options
+python -m src.toy_convergence    # defaults: --seed 7 --reps 5000 --gap 0.2 --near-tie-h 2 --ratio 2
 ```
 
 The R simulation also runs from the repo root:

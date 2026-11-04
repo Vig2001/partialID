@@ -246,3 +246,51 @@ def draw_heatmap(
         ax.tick_params(labelsize=label_fontsize)
     ax.set_title(title, fontsize=title_fontsize)
     return im
+
+
+def plot_bound_convergence(
+    df: pd.DataFrame,
+    cases: Sequence[str],
+    titles: Sequence[str],
+    out_path: Path,
+) -> None:
+    """Estimated band against n_1 (log scale), one panel per case.
+
+    Lines are the mean of L_hat and U_hat over replicates, with markers at
+    the simulated n_1; the shading is the 5-95% range of the replicate
+    values. Dashed lines are the true band and dotted lines, where the
+    datasets differ, the looser single-dataset bounds L_2 and U_1.
+
+    Args:
+        df: One row per (case, n1), as written by src/toy_convergence.py.
+        cases: Values of df.case, one panel each, in order.
+        titles: Panel titles, one per case.
+        out_path: Where to save the figure.
+    """
+    fig, axes = plt.subplots(1, len(cases), figsize=(13, 4.2), sharey=True)
+    colour, grey = PALETTE[0], "#73726c"
+    for ax, case, title in zip(axes, cases, titles):
+        sub = df[df.case == case].sort_values("n1")
+        for k, end in enumerate(("L", "U")):
+            ax.fill_between(sub.n1, sub[f"{end}_q05"], sub[f"{end}_q95"],
+                            color=colour, alpha=0.2, lw=0,
+                            label="5–95% of replicates" if k == 0 else None)
+            ax.plot(sub.n1, sub[f"{end}_mean"], color=colour, lw=2,
+                    marker="o", ms=4, label="mean" if k == 0 else None)
+        if (sub.gap > 0).any():
+            ax.plot(sub.n1, sub.L_2, color=grey, lw=1.2, ls=":",
+                    label="looser single-dataset bounds")
+            ax.plot(sub.n1, sub.U_1, color=grey, lw=1.2, ls=":")
+        for k, true_bound in enumerate((sub.true_lo.iloc[0],
+                                        sub.true_hi.iloc[0])):
+            ax.axhline(true_bound, color=grey, lw=1, ls="--",
+                       label="true band" if k == 0 else None)
+        ax.set_xscale("log")
+        ax.set_xlabel("$n_1$")
+        ax.set_title(title, fontsize=10)
+        style_axes(ax)
+    axes[0].set_ylabel("Estimated bound")
+    axes[0].legend(frameon=False, fontsize=8, loc="center right")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
