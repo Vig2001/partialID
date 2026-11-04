@@ -35,7 +35,7 @@ Both scripts stop if the clone is at another commit or their scripts are edited.
 
 ### Layout
 - `src/toy_sim.py`: known-true-band toy comparing the intersection CI with the convex combination CI.
-- `src/toy_convergence.py`: the split method's estimated band in the toy as n grows (separated, near-tie and exact-tie gaps).
+- `src/toy_convergence.py`: estimated bands in the toy as n grows: the split for a difference in population means and for equal means, and the standardised bias of split and intersection at small gaps (uniform convergence).
 - `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights). Old ZSB/NIW helpers and plots are archived in `scripts_misc/outdated_help/`.
 - `src/plotting/`: figure code (`toy_sim_plots.py` for the toy).
 - `src/outputs/<script>/`: results and figures written by each script.
@@ -88,7 +88,7 @@ Run entry scripts as modules from the repo root with the environment active, e.g
 ```
 python -m src.toy_sim            # defaults: --seed 7 --reps 5000 --frac-a 0.3
 python -m src.toy_sim --help     # all options
-python -m src.toy_convergence    # defaults: --seed 7 --reps 5000 --gap 0.2 --near-tie-h 2 --ratio 2
+python -m src.toy_convergence    # defaults: --seed 7 --reps 5000 --gaps 0.05 0.2 0.5 --uniform-gaps 0.01 0.02 0.05 0.1 0.2 --ratio 2
 ```
 
 The R simulation also runs from the repo root:
@@ -100,7 +100,7 @@ Rscript R/causal_sim.R --summarise-only   # recompute CIs from saved estimates.c
 caffeinate -is Rscript R/causal_sim.R     # keep a Mac awake (plugged in, lid open)
 ```
 
-The design of `quality_reports/plans/2026-11-03_convex-advantage-noise-design.md` scales study 2's continuous outcome noise by c = 2 and gives each study its own Λ grid:
+The design of `quality_reports/plans/done/2026-11-03_convex-advantage-noise-design.md` scales study 2's continuous outcome noise by c = 2 and gives each study its own Λ grid:
 
 ```
 caffeinate -is Rscript R/causal_sim.R --noise-scale-2 2 --lambdas-1 3:5:0.05 --lambdas-2 1:3:0.05 --out-dir src/outputs/causal_sim_noise

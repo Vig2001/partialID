@@ -5,6 +5,7 @@ Results come as a DataFrame with one row per (g_L, g_U, r, method) cell.
 
 from collections.abc import Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -248,49 +249,153 @@ def draw_heatmap(
     return im
 
 
+class ConvergencePanel(NamedTuple):
+    """One panel of plot_bound_convergence.
+
+    Attributes:
+        title: Panel title.
+        gaps: Population gaps g drawn in the panel (values of df.gap).
+        methods: Methods drawn in the panel (values of df.method).
+        ribbon: Whether to shade the 5-95% range of the replicate values.
+    """
+
+    title: str
+    gaps: tuple[float, ...]
+    methods: tuple[str, ...]
+    ribbon: bool
+
+
+def _convergence_series(
+    panel: ConvergencePanel,
+) -> list[tuple[float, str, str, str]]:
+    """(gap, method, colour, label) per line: coloured by method if a panel
+    has several methods, otherwise by gap.
+
+    Raises:
+        ValueError: If there are more lines than colours.
+    """
+    by_method = len(panel.methods) > 1
+    keys = panel.methods if by_method else panel.gaps
+    if len(keys) > len(PALETTE):
+        raise ValueError(f"At most {len(PALETTE)} lines, got {len(keys)=}")
+    series = []
+    for i, g in enumerate(panel.gaps):
+        for j, method in enumerate(panel.methods):
+            colour = PALETTE[j if by_method else i]
+            if by_method:
+                label = method
+            elif len(panel.gaps) > 1:
+                label = f"$g = {g:g}$"
+            else:
+                label = "mean"
+            series.append((g, method, colour, label))
+    return series
+
+
 def plot_bound_convergence(
     df: pd.DataFrame,
-    cases: Sequence[str],
-    titles: Sequence[str],
+    panels: Sequence[ConvergencePanel],
     out_path: Path,
 ) -> None:
-    """Estimated band against n_1 (log scale), one panel per case.
+    """Estimated band against n_1 (log scale), one panel per spec.
 
     Lines are the mean of L_hat and U_hat over replicates, with markers at
-    the simulated n_1; the shading is the 5-95% range of the replicate
-    values. Dashed lines are the true band and dotted lines, where the
-    datasets differ, the looser single-dataset bounds L_2 and U_1.
+    the simulated n_1; where a panel has a ribbon, the shading is the 5-95%
+    range of the replicate values. Dashed lines are the true band and
+    dotted lines, for gaps g > 0, the looser single-dataset bounds L_2 and
+    U_1 in the colour of their gap.
 
     Args:
-        df: One row per (case, n1), as written by src/toy_convergence.py.
-        cases: Values of df.case, one panel each, in order.
-        titles: Panel titles, one per case.
+        df: One row per (n1, gap, method), as written by
+            src/toy_convergence.py.
+        panels: Panel specifications, in order.
         out_path: Where to save the figure.
     """
-    fig, axes = plt.subplots(1, len(cases), figsize=(13, 4.2), sharey=True)
-    colour, grey = PALETTE[0], "#73726c"
-    for ax, case, title in zip(axes, cases, titles):
-        sub = df[df.case == case].sort_values("n1")
-        for k, end in enumerate(("L", "U")):
-            ax.fill_between(sub.n1, sub[f"{end}_q05"], sub[f"{end}_q95"],
-                            color=colour, alpha=0.2, lw=0,
-                            label="5–95% of replicates" if k == 0 else None)
-            ax.plot(sub.n1, sub[f"{end}_mean"], color=colour, lw=2,
-                    marker="o", ms=4, label="mean" if k == 0 else None)
-        if (sub.gap > 0).any():
-            ax.plot(sub.n1, sub.L_2, color=grey, lw=1.2, ls=":",
-                    label="looser single-dataset bounds")
-            ax.plot(sub.n1, sub.U_1, color=grey, lw=1.2, ls=":")
-        for k, true_bound in enumerate((sub.true_lo.iloc[0],
-                                        sub.true_hi.iloc[0])):
+    fig, axes = plt.subplots(1, len(panels), figsize=(5 * len(panels), 4.4),
+                             sharey=True, squeeze=False)
+    axes = axes[0]
+    grey = "#73726c"
+    for ax, panel in zip(axes, panels):
+        looser_drawn, ribbon_labelled = set(), False
+        for g, method, colour, label in _convergence_series(panel):
+            sub = df[(df.gap == g) & (df.method == method)].sort_values("n1")
+            if sub.empty:
+                raise ValueError(f"No results for {g=}, {method=}")
+            for k, end in enumerate(("L", "U")):
+                if panel.ribbon:
+                    ax.fill_between(
+                        sub.n1, sub[f"{end}_q05"], sub[f"{end}_q95"],
+                        color=colour, alpha=0.18, lw=0,
+                        label=(None if ribbon_labelled or k
+                               else "5–95% of replicates"),
+                    )
+                    ribbon_labelled = True
+                ax.plot(sub.n1, sub[f"{end}_mean"], color=colour, lw=2,
+                        marker="o", ms=3.5, label=label if k == 0 else None)
+            if g > 0 and g not in looser_drawn:
+                ax.plot(sub.n1, sub.L_2, color=colour, lw=1, ls=":",
+                        label=(None if looser_drawn
+                               else "looser single-dataset bounds"))
+                ax.plot(sub.n1, sub.U_1, color=colour, lw=1, ls=":")
+                looser_drawn.add(g)
+        first = df.iloc[0]
+        for k, true_bound in enumerate((first.true_lo, first.true_hi)):
             ax.axhline(true_bound, color=grey, lw=1, ls="--",
                        label="true band" if k == 0 else None)
         ax.set_xscale("log")
         ax.set_xlabel("$n_1$")
-        ax.set_title(title, fontsize=10)
+        ax.set_title(panel.title, fontsize=10)
+        ax.legend(frameon=False, fontsize=7.5, loc="center right")
         style_axes(ax)
     axes[0].set_ylabel("Estimated bound")
-    axes[0].legend(frameon=False, fontsize=8, loc="center right")
+    fig.tight_layout()
+    fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_standardised_bias(
+    df: pd.DataFrame,
+    methods: Sequence[str],
+    gaps: Sequence[float],
+    out_path: Path,
+) -> None:
+    """Standardised outward bias of each end against n_1 (log scale).
+
+    Rows are the lower and upper ends (columns out_L, out_U), columns the
+    methods; one line per population gap g, coloured from light (small g)
+    to dark. Positive values mean the estimated band is too wide.
+
+    Args:
+        df: One row per (n1, gap, method), with columns out_L and out_U
+            (src/toy_convergence.py).
+        methods: Values of df.method, one column of panels each.
+        gaps: Values of df.gap, one line each, in legend order.
+        out_path: Where to save the figure.
+    """
+    fig, axes = plt.subplots(2, len(methods), figsize=(5 * len(methods), 6.6),
+                             sharex=True, sharey=True, squeeze=False)
+    colours = plt.cm.viridis(np.linspace(0.85, 0.1, len(gaps)))
+    ends = (("out_L", "Lower end"), ("out_U", "Upper end"))
+    for i, (column, end_name) in enumerate(ends):
+        for j, method in enumerate(methods):
+            ax = axes[i, j]
+            ax.axhline(0, color="#73726c", lw=1, ls="--")
+            for g, colour in zip(gaps, colours):
+                sub = df[(df.method == method) & (df.gap == g)].sort_values(
+                    "n1")
+                if sub.empty:
+                    raise ValueError(f"No results for {g=}, {method=}")
+                ax.plot(sub.n1, sub[column], color=colour, lw=2, marker="o",
+                        ms=3.5, label=f"$g = {g:g}$")
+            ax.set_xscale("log")
+            if i == 0:
+                ax.set_title(method[0].upper() + method[1:], fontsize=10)
+            if i == 1:
+                ax.set_xlabel("$n_1$")
+            if j == 0:
+                ax.set_ylabel(f"{end_name}: outward bias / SD")
+            style_axes(ax)
+    axes[1, -1].legend(frameon=False, fontsize=8, loc="upper left", ncol=2)
     fig.tight_layout()
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)

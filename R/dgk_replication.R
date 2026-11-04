@@ -14,7 +14,7 @@
 # Usage, from the repo root:
 #   Rscript R/dgk_replication.R [--check-only]
 #
-# Plan:    quality_reports/plans/2026-11-02_dgk-exact-replication.md
+# Plan:    quality_reports/plans/done/2026-11-02_dgk-exact-replication.md
 # Outputs: src/outputs/dgk_replication/
 
 if (!file.exists(file.path("R", "dgk_replication.R"))) {

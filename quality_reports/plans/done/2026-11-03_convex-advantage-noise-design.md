@@ -42,7 +42,8 @@ regime at the same n, so the run time stays near the baseline's.
   a Bernoulli outcome), so binary results will resemble the baseline; the
   continuous outcome is the main result.
 
-## Evidence so far (pilots, 2026-11-03; scripts and data in `quality_reports/pilots/2026-11-03_convex-advantage/`)
+## Evidence so far (pilots, 2026-11-03; scripts and data were in `quality_reports/pilots/2026-11-03_convex-advantage/`,
+deleted on 2026-11-04 after the 1000-rep run; recover with `git show 7cb050e:quality_reports/pilots/2026-11-03_convex-advantage/<file>`)
 Forest pilot: DGK's estimators, 10 reps per setting.
 - Study 2's SD scales with c almost exactly: 1.42-1.50x at c = 1.5,
   1.88-2.01x at c = 2 and 2.41-2.45x at c = 2.5, at n = 500, 1000 and 2000.

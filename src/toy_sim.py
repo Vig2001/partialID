@@ -13,10 +13,10 @@ the split method's loss of evaluation data.
 Usage, from the repo root:
     python -m src.toy_sim [--seed 7] [--reps 5000] [--frac-a 0.3] [--no-plots]
 
-Plans: quality_reports/plans/2026-10-09_band-toy-simulation.md,
-       quality_reports/plans/2026-10-11_band-toy-refactor.md,
-       quality_reports/plans/2026-10-27_calibrated-intersection.md,
-       quality_reports/plans/2026-11-03_toy-cross-fit.md
+Plans: quality_reports/plans/done/2026-10-09_band-toy-simulation.md,
+       quality_reports/plans/done/2026-10-11_band-toy-refactor.md,
+       quality_reports/plans/done/2026-10-27_calibrated-intersection.md,
+       quality_reports/plans/done/2026-11-03_toy-cross-fit.md
 Outputs: src/outputs/toy_sim/
 """
 

@@ -18,7 +18,7 @@
 #     [--out-dir src/outputs/causal_sim] [--summarise-only]
 # The defaults reproduce the baseline run (both studies on DGK's grid, c = 1).
 #
-# Plans:   quality_reports/plans/2026-11-02_dvds-r-two-os.md,
+# Plans:   quality_reports/plans/done/2026-11-02_dvds-r-two-os.md,
 #          2026-11-02_dgk-exact-replication.md, 2026-11-02_causal-sim-binary.md,
 #          2026-11-03_convex-advantage-noise-design.md
 # Notes:   partialID_Overleaf/Notes/Project_Notes/causal_sim_code_explained.tex
