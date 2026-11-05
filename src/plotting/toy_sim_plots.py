@@ -207,9 +207,13 @@ def heatmap_row(
 def centred_norm(
     mats: Sequence[np.ndarray], centre: float
 ) -> colors.TwoSlopeNorm:
-    """Diverging norm centred on centre, symmetric over all values in mats."""
+    """Diverging norm centred on centre, symmetric over all values in mats.
+
+    NaN entries are ignored.
+    """
     vals = np.concatenate([m.ravel() for m in mats])
-    span = max(abs(vals.max() - centre), abs(vals.min() - centre), 1e-3)
+    span = max(abs(np.nanmax(vals) - centre), abs(np.nanmin(vals) - centre),
+               1e-3)
     return colors.TwoSlopeNorm(
         vcenter=centre, vmin=centre - span, vmax=centre + span
     )
@@ -229,12 +233,16 @@ def draw_heatmap(
 ):
     """Draws one annotated (g_L, g_U) heatmap on ax and returns the image.
 
+    NaN cells are left blank.
+
     Args:
         label_fontsize: Size of tick and axis labels; None keeps the
             matplotlib default.
     """
     im = ax.imshow(mat, origin="lower", cmap=DIVERGING, norm=colour_norm)
     for (a, b), v in np.ndenumerate(mat):
+        if np.isnan(v):
+            continue
         ax.text(b, a, fmt.format(v), ha="center", va="center",
                 fontsize=annot_fontsize, color="#1a1a19")
     gap_labels = [f"{g:g}" for g in gaps]

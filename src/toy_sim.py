@@ -8,7 +8,11 @@ and CI from the same data), and with a calibrated intersection CI that uses
 z = Phi^{-1}(1 - alpha / 4): Bonferroni over 2 datasets x 2 ends, so it is
 valid whichever dataset attains each end. A cross-fitted convex CI (K = 5
 folds: weights from the other folds, bounds from each fold, averaged) removes
-the split method's loss of evaluation data.
+the split method's loss of evaluation data. The CLR intersection CI
+(Chernozhukov, Lee and Rosen, 2013) corrects each bound before taking the
+max or min; it is compared with the split and cross-fitted convex CIs and
+with M9, CLR over every convex combination of the two bounds (a convex CI
+without a sample split).
 
 Usage, from the repo root:
     python -m src.toy_sim [--seed 7] [--reps 5000] [--frac-a 0.3] [--no-plots]
@@ -16,7 +20,9 @@ Usage, from the repo root:
 Plans: quality_reports/plans/done/2026-10-09_band-toy-simulation.md,
        quality_reports/plans/done/2026-10-11_band-toy-refactor.md,
        quality_reports/plans/done/2026-10-27_calibrated-intersection.md,
-       quality_reports/plans/done/2026-11-03_toy-cross-fit.md
+       quality_reports/plans/done/2026-11-03_toy-cross-fit.md,
+       quality_reports/plans/done/2026-11-05_toy-clr.md,
+       quality_reports/plans/done/2026-11-05_toy-convex-clr.md
 Outputs: src/outputs/toy_sim/
 """
 
@@ -48,8 +54,12 @@ M5_D1 = "M5 dataset 1 only"
 M5_D2 = "M5 dataset 2 only"
 M6 = "M6 intersection (calibrated)"
 M7 = "M7 convex (cross-fit, K=5)"
+M8 = "M8 intersection (CLR)"
+M9 = "M9 convex (CLR, no split)"
 CROSS_FIT_FOLDS = {M7: 5}  # number of folds K per cross-fit method
 PLOT_METHODS = (M1, M2, M3, M4)
+CLR_COMPARATORS = (M3, M7, M9)  # methods whose width is compared with M8
+UNDERCOVER_SES = 2  # flag coverage this many MC s.e. below nominal
 
 
 # ----------------------------- configuration ------------------------------
@@ -101,6 +111,11 @@ class ToyConfig:
     def z_calibrated(self) -> float:
         """Bonferroni over the 4 one-sided (dataset, end) events."""
         return stats.norm.ppf(1 - self.alpha / 4)
+
+    @property
+    def clr_gamma(self) -> float:
+        """CLR's selection level 1 - 0.1 / log(n), with n = n_1 + n_2."""
+        return 1 - 0.1 / np.log(sum(self.n))
 
     @property
     def true_lo(self) -> float:
@@ -255,6 +270,12 @@ def ci_by_method(
         M5_D2: ci_methods.convex_ci(full.L, full.U, full.s2, 0.0, 0.0, z),
         M6: ci_methods.intersection_ci(
             full.L, full.U, full.s2, cfg.z_calibrated
+        ),
+        M8: ci_methods.clr_intersection_ci(
+            full.L, full.U, full.s2, 1 - cfg.alpha / 2, cfg.clr_gamma
+        ),
+        M9: ci_methods.clr_convex_ci(
+            full.L, full.U, full.s2, 1 - cfg.alpha / 2, cfg.clr_gamma
         ),
     }
     for method, n_folds in CROSS_FIT_FOLDS.items():
@@ -428,13 +449,13 @@ def _check_coverage_separable(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
 def _check_joint_coverage(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
     """Joint coverage >= 1 - alpha in every cell (up to MC error).
 
-    Guaranteed for M6. For the cross-fitted methods it is not guaranteed
-    near ties (fold estimates and weights are dependent), so a FAIL there
-    is a finding, not a bug.
+    Guaranteed for M6, and asymptotically for M8 and M9. For the
+    cross-fitted methods it is not guaranteed near ties (fold estimates and
+    weights are dependent), so a FAIL there is a finding, not a bug.
     """
     nominal = 1 - cfg.alpha
     checks = []
-    for method in (M6, *CROSS_FIT_FOLDS):
+    for method in (M6, *CROSS_FIT_FOLDS, M8, M9):
         cells = df[df.method == method]
         # Cells with coverage 1 have MC SE 0 and give z = +inf, which passes.
         zs = (cells.cov_joint - nominal) / cells.cov_joint_mcse
@@ -446,13 +467,36 @@ def _check_joint_coverage(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
     return checks
 
 
+def _check_clr_tie_coverage(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
+    """M8 and M9 per-end coverage at a tie with r = 1 vs 1 - alpha / 2.
+
+    At a tie nothing is dropped by selection, so each end covers with
+    probability 1 - alpha / 2: for M8, Phi(k)^2 with
+    k = Phi^{-1}(sqrt(1 - alpha / 2)); for M9, the tube formula over all
+    weights.
+    """
+    nominal = 1 - cfg.alpha / 2
+    checks = []
+    for method in (M8, M9):
+        row = _cell(df, method, 0.0, 0.0, 1)
+        checks.append(Check(
+            f"{method.split()[0]} per-end coverage at g_L=g_U=0, r=1 vs "
+            f"{nominal:g}",
+            max(abs(row.cov_lo - nominal) / row.cov_lo_mcse,
+                abs(row.cov_hi - nominal) / row.cov_hi_mcse) <= 3,
+            f"lower {row.cov_lo:.4f} (MC SE {row.cov_lo_mcse:.4f}), upper "
+            f"{row.cov_hi:.4f} (MC SE {row.cov_hi_mcse:.4f})"))
+    return checks
+
+
 def run_sanity_checks(df: pd.DataFrame, cfg: ToyConfig) -> bool:
     """Prints PASS/FAIL for each check and returns True if all pass."""
     checks = []
     for check_fn in (_check_closed_forms, _check_oracle_weights_at_tie,
                      _check_oracle_own_target,
                      _check_m1_matches_m2_at_large_gap,
-                     _check_coverage_separable, _check_joint_coverage):
+                     _check_coverage_separable, _check_joint_coverage,
+                     _check_clr_tie_coverage):
         checks.extend(check_fn(df, cfg))
     print("\nSanity checks")
     for check in checks:
@@ -475,8 +519,44 @@ def print_diagonal(df: pd.DataFrame) -> None:
         print(show[columns].to_string(index=False))
 
 
+def clr_width_ratios(df: pd.DataFrame, cfg: ToyConfig) -> pd.DataFrame:
+    """Mean CI width of each CLR comparator over M8's, one row per cell.
+
+    The ratio is NaN where either CI undercovers, i.e. has joint coverage
+    more than UNDERCOVER_SES MC s.e. below 1 - alpha: widths are only
+    compared between valid CIs.
+
+    Returns:
+        Columns r, g_L, g_U, method (a comparator) and ratio.
+    """
+    keys = ["r", "g_L", "g_U"]
+    valid = (df.cov_joint
+             >= 1 - cfg.alpha - UNDERCOVER_SES * df.cov_joint_mcse)
+    width = df.assign(width=df.width.where(valid))
+    clr = width[width.method == M8].set_index(keys).width
+    frames = []
+    for method in CLR_COMPARATORS:
+        other = width[width.method == method].set_index(keys).width
+        ratio = (other / clr).rename("ratio").reset_index()
+        frames.append(ratio.assign(method=method))
+    return pd.concat(frames, ignore_index=True)
+
+
+def print_clr_comparison(ratios: pd.DataFrame, n_cells: int) -> None:
+    """Prints, per comparator and r, how often it is narrower than M8."""
+    summary = ratios.groupby(["method", "r"]).ratio.agg(
+        both_valid="count",
+        narrower=lambda x: int((x < 1).sum()),
+        min_ratio="min",
+        max_ratio="max",
+    )
+    print(f"\nWidth over M8 (CLR), cells where both cover (of {n_cells})")
+    with pd.option_context("display.float_format", "{:.3f}".format):
+        print(summary.to_string())
+
+
 def make_plots(df: pd.DataFrame, cfg: ToyConfig, out_dir: Path) -> None:
-    """Writes figures 1-4 to out_dir."""
+    """Writes figures 1-5 to out_dir."""
     styles = toy_sim_plots.method_styles(PLOT_METHODS)
     grid = dict(gaps=cfg.gaps, ratios=cfg.ratios)
     toy_sim_plots.plot_per_end(
@@ -509,6 +589,14 @@ def make_plots(df: pd.DataFrame, cfg: ToyConfig, out_dir: Path) -> None:
         PLOT_METHODS[1:], styles, reps=cfg.reps,
         out_path=out_dir / "fig4_weights.png", **grid)
 
+    clr_ratios = clr_width_ratios(df, cfg)
+    clr_mats = [[toy_sim_plots.pivot_cells(clr_ratios, m, r, "ratio", cfg.gaps)
+                 for r in cfg.ratios] for m in CLR_COMPARATORS]
+    toy_sim_plots.heatmap_grid(
+        clr_mats, [f"{m.split()[0]} / M8" for m in CLR_COMPARATORS],
+        "Mean width ratio (centre 1; blank: either CI undercovers)", 1.0,
+        "{:.3f}", out_path=out_dir / "fig5_width_ratio_clr.png", **grid)
+
 
 # ----------------------------- main ------------------------------
 def run(cfg: ToyConfig, seed: int, out_dir: Path, plots: bool) -> pd.DataFrame:
@@ -520,6 +608,7 @@ def run(cfg: ToyConfig, seed: int, out_dir: Path, plots: bool) -> pd.DataFrame:
     df.to_csv(out_dir / "results.csv", index=False)
     run_sanity_checks(df, cfg)
     print_diagonal(df)
+    print_clr_comparison(clr_width_ratios(df, cfg), len(cfg.gaps) ** 2)
     if plots:
         make_plots(df, cfg, out_dir)
     print(f"\nWritten to {out_dir}")

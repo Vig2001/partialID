@@ -21,7 +21,7 @@
 # Plans:   quality_reports/plans/done/2026-11-02_dvds-r-two-os.md,
 #          2026-11-02_dgk-exact-replication.md, 2026-11-02_causal-sim-binary.md,
 #          2026-11-03_convex-advantage-noise-design.md
-# Notes:   partialID_Overleaf/Notes/Project_Notes/causal_sim_code_explained.tex
+# Notes:   partialID_Overleaf/Notes/Simulation_Notes/causal_sim_code_explained.tex
 # Outputs: src/outputs/causal_sim/ (summary.csv: coverage and widths only;
 #          summary_full.csv: every summary column)
 

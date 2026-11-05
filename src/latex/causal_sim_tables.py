@@ -4,21 +4,25 @@ Does not rerun the simulation: run `Rscript R/causal_sim.R` first.
 
 Rows: for each Lambda_1 in --lambdas-1, the --top values of Lambda_2 at which
 the convex split CI is narrowest relative to the calibrated intersection CI,
-among the pairs where both have valid joint coverage. Columns: each dataset
-alone, the calibrated intersection and the convex split.
+among the pairs where both have valid joint coverage. Columns: the methods in
+--methods (default: each dataset alone, the calibrated intersection and the
+convex split).
 
 Usage, from the repo root:
     python -m src.latex.causal_sim_tables [--summary <summary_full.csv>]
         [--outcome continuous] [--lambdas-1 3 3.5 4 4.5 5] [--top 3]
-        [--metric ci|band] [--alpha 0.05]
+        [--metric ci|band] [--methods dataset1 dataset2 intersection split]
+        [--macro-decimals 3] [--alpha 0.05]
 Outputs, beside the summary:
     width_coverage_best_<outcome>.tex  rows: Lambda_1, Lambda_2, then
         width (coverage) per method
     band_width_best_<outcome>.tex      rows: Lambda_1, Lambda_2, true band
         width, then mean estimated band width per method
     <table>_macros.tex                 median, min and max MC s.e. in the
-        table, as LaTeX macros for the caption: \\causalWidthMcse{Median,Min,
-        Max} and \\causalCovMcse{...} (ci) or \\causalBandMcse{...} (band)
+        table, as LaTeX macros for the caption, named by outcome:
+        \\causal<Outcome>WidthMcse{Median,Min,Max} and
+        \\causal<Outcome>CovMcse{...} (ci) or \\causal<Outcome>BandMcse{...}
+        (band), e.g. \\causalBinaryWidthMcseMedian
 """
 
 import argparse
@@ -37,11 +41,13 @@ DATASET_1 = "dataset 1"
 DATASET_2 = "dataset 2"
 INTERSECTION = "intersection (calibrated)"
 CONVEX_SPLIT = "convex (split)"
-TABLE_METHODS = (DATASET_1, DATASET_2, INTERSECTION, CONVEX_SPLIT)
-# Caption macros: prefix -> summary_full.csv column of MC s.e.
+# CLI name -> method name in summary_full.csv, in default column order.
+METHOD_NAMES = {"dataset1": DATASET_1, "dataset2": DATASET_2,
+                "intersection": INTERSECTION, "split": CONVEX_SPLIT}
+# Caption macros: name after \causal<Outcome> -> column of MC s.e.
 CAPTION_MACROS = {
-    "ci": {"causalWidthMcse": "width_mcse", "causalCovMcse": "cov_joint_mcse"},
-    "band": {"causalBandMcse": "band_width_mcse"},
+    "ci": {"WidthMcse": "width_mcse", "CovMcse": "cov_joint_mcse"},
+    "band": {"BandMcse": "band_width_mcse"},
 }
 UNDERCOVER_SES = toy_sim_slide_figs.UNDERCOVER_SES
 LAMBDA_TOL = 1e-9  # Lambda values are read back from CSV
@@ -91,22 +97,28 @@ def best_pairs(
     return pd.concat(groups, ignore_index=True)
 
 
-def cells_at(df: pd.DataFrame, lambda_1: float, lambda_2: float) -> pd.DataFrame:
-    """The summary rows of the tabulated methods at one (Lambda_1, Lambda_2)."""
-    keep = (df.method.isin(TABLE_METHODS)
+def cells_at(
+    df: pd.DataFrame, lambda_1: float, lambda_2: float,
+    methods: Sequence[str]
+) -> pd.DataFrame:
+    """The summary rows of the given methods at one (Lambda_1, Lambda_2)."""
+    keep = (df.method.isin(methods)
             & np.isclose(df.lambda_1, lambda_1, atol=LAMBDA_TOL)
             & np.isclose(df.lambda_2, lambda_2, atol=LAMBDA_TOL))
     return df[keep]
 
 
-def pair_rows(df: pd.DataFrame, pairs: pd.DataFrame) -> pd.DataFrame:
+def pair_rows(
+    df: pd.DataFrame, pairs: pd.DataFrame, methods: Sequence[str]
+) -> pd.DataFrame:
     """The summary rows of every tabulated pair and method."""
-    return pd.concat([cells_at(df, p.lambda_1, p.lambda_2)
+    return pd.concat([cells_at(df, p.lambda_1, p.lambda_2, methods)
                       for p in pairs.itertuples()])
 
 
 def table_rows(
-    df: pd.DataFrame, pairs: pd.DataFrame, nominal: float, metric: str
+    df: pd.DataFrame, pairs: pd.DataFrame, nominal: float, metric: str,
+    methods: Sequence[str]
 ) -> str:
     """LaTeX tabular rows: Lambda_1, Lambda_2, then one cell per method.
 
@@ -119,11 +131,11 @@ def table_rows(
     lines = []
     for lambda_1, group in pairs.groupby("lambda_1", sort=False):
         for k, pair in enumerate(group.itertuples()):
-            cells = cells_at(df, lambda_1, pair.lambda_2)
+            cells = cells_at(df, lambda_1, pair.lambda_2, methods)
             row = [f"{lambda_1:g}" if k == 0 else "", f"{pair.lambda_2:g}"]
             if metric == "band":
                 row.append(f"{cells.true_band_width.iloc[0]:.3f}")
-            for method in TABLE_METHODS:
+            for method in methods:
                 result = cells[cells.method == method].iloc[0]
                 row.append(toy_sim_slide_figs.band_cell(result)
                            if metric == "band"
@@ -133,13 +145,20 @@ def table_rows(
     return "\n".join(lines[:-1]) + "\n"
 
 
-def caption_macros(cells: pd.DataFrame, metric: str) -> str:
-    """LaTeX \\def lines: median, min and max MC s.e. of each tabulated quantity."""
+def caption_macros(
+    cells: pd.DataFrame, metric: str, outcome: str, decimals: int
+) -> str:
+    """LaTeX \\def lines: median, min and max MC s.e. of each tabulated quantity.
+
+    Macros are named \\causal<Outcome><quantity><stat>, so the tables of both
+    outcomes can share a document.
+    """
     lines = []
-    for prefix, column in CAPTION_MACROS[metric].items():
+    for quantity, column in CAPTION_MACROS[metric].items():
+        prefix = f"causal{outcome.capitalize()}{quantity}"
         stats = {"Median": cells[column].median(), "Min": cells[column].min(),
                  "Max": cells[column].max()}
-        lines.extend(rf"\def\{prefix}{name}{{{value:.3f}}}"
+        lines.extend(rf"\def\{prefix}{name}{{{value:.{decimals}f}}}"
                      for name, value in stats.items())
     return "\n".join(lines) + "\n"
 
@@ -159,6 +178,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--metric", choices=("ci", "band"), default="ci",
                         help="Table cells: 'ci' for width (coverage), 'band' "
                              "for the mean estimated band width.")
+    parser.add_argument("--methods", nargs="+", choices=tuple(METHOD_NAMES),
+                        default=list(METHOD_NAMES),
+                        help="Method columns, in this order.")
+    parser.add_argument("--macro-decimals", type=int, default=3,
+                        help="Decimal places of the MC s.e. caption macros.")
     parser.add_argument("--alpha", type=float, default=0.05,
                         help="Nominal level of the run (see run_info.txt).")
     parser.add_argument("--out-dir", type=Path, default=None,
@@ -166,12 +190,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
     if args.top < 1:
         parser.error(f"--top must be >= 1, got {args.top}")
+    if len(set(args.methods)) < len(args.methods):
+        parser.error(f"--methods has a repeat: {args.methods}")
+    if args.macro_decimals < 0:
+        parser.error(f"--macro-decimals must be >= 0, got "
+                     f"{args.macro_decimals}")
     return args
 
 
 def main() -> None:
     args = parse_args()
     nominal = 1 - args.alpha
+    methods = [METHOD_NAMES[name] for name in args.methods]
     summary = pd.read_csv(args.summary)
     df = summary[summary.outcome == args.outcome]
     pairs = best_pairs(df, args.lambdas_1, args.top, nominal)
@@ -181,11 +211,12 @@ def main() -> None:
     header = (f"% Written by python -m src.latex.causal_sim_tables from "
               f"{args.summary.name}\n")
     table_path.write_text(
-        header + table_rows(df, pairs, nominal, args.metric)
+        header + table_rows(df, pairs, nominal, args.metric, methods)
     )
     macros_path = table_path.with_name(f"{table_path.stem}_macros.tex")
     macros_path.write_text(
-        header + caption_macros(pair_rows(df, pairs), args.metric)
+        header + caption_macros(pair_rows(df, pairs, methods), args.metric,
+                                args.outcome, args.macro_decimals)
     )
     print(pairs.round(3).to_string(index=False))
     print(f"Written to {table_path}\nWritten to {macros_path}")

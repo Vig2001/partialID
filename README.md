@@ -34,12 +34,12 @@ git -C external/DoublyValidDoublySharpSensitivity checkout 26cbbf6e90dcd0648c837
 Both scripts stop if the clone is at another commit or their scripts are edited. Their repository has no licence file: use it privately and don't copy it into a public release (point to the commit instead).
 
 ### Layout
-- `src/toy_sim.py`: known-true-band toy comparing the intersection CI with the convex combination CI.
+- `src/toy_sim.py`: known-true-band toy comparing the intersection CI with the convex combination CI, and the CLR intersection bounds (M8) and CLR over all convex combinations (M9, a convex CI without a sample split) with the split and cross-fitted convex CIs.
 - `src/toy_convergence.py`: estimated bands in the toy as n grows: the split for a difference in population means and for equal means, and the standardised bias of split and intersection at small gaps (uniform convergence).
 - `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights). Old ZSB/NIW helpers and plots are archived in `scripts_misc/outdated_help/`.
 - `src/plotting/`: figure code (`toy_sim_plots.py` for the toy).
 - `src/outputs/<script>/`: results and figures written by each script.
-- `R/causal_sim.R`: two observational studies from the Dorn, Guo & Kallus DGP (different n and Λ), each with a binary and a continuous outcome; compares calibrated intersection, single-study and convex split CIs. Explained in `partialID_Overleaf/Notes/Project_Notes/causal_sim_code_explained.tex`.
+- `R/causal_sim.R`: two observational studies from the Dorn, Guo & Kallus DGP (different n and Λ), each with a binary and a continuous outcome; compares calibrated intersection, single-study and convex split CIs. Explained in `partialID_Overleaf/Notes/Simulation_Notes/causal_sim_code_explained.tex`.
 - `R/dgk_replication.R`: runs DGK's own simulation (paper Section 7.1) unmodified and compares it with their committed results.
 - `R/helpers/`: `dgk.R` (DGK's data generation, nuisances, `dvds.binary()` and `dvds.continuous()`, used as is), `data_fusion_design.R` (our two-study design: folds, true bands: closed form for continuous, Monte Carlo for binary), `run_time.R`, `ci_methods.R` and `mc_metrics.R` (ports of the Python modules).
 
@@ -65,7 +65,7 @@ projectone/
 ├── renv/, .Rprofile          # renv activation; renv/library/ is gitignored
 ├── requirements.txt          # pinned Python packages
 ├── pyproject.toml            # installs src/ only
-└── tests/                    # pytest tests (not set up yet)
+└── tests/                    # pytest unit tests (pytest not installed yet)
 ```
 
 Non-Python requirements: R (packages via `renv`), and Stata with `clrbound` (`ssc install clrbound`) for the intersection-bounds comparison. Record the R, Stata and `clrbound` versions with any results that use them.
@@ -89,6 +89,7 @@ Run entry scripts as modules from the repo root with the environment active, e.g
 python -m src.toy_sim            # defaults: --seed 7 --reps 5000 --frac-a 0.3
 python -m src.toy_sim --help     # all options
 python -m src.toy_convergence    # defaults: --seed 7 --reps 5000 --gaps 0.05 0.2 0.5 --uniform-gaps 0.01 0.02 0.05 0.1 0.2 --ratio 2
+python -m pytest                 # unit tests in tests/ (needs pytest, not yet in requirements.txt)
 ```
 
 The R simulation also runs from the repo root:
