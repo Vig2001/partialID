@@ -1,7 +1,32 @@
 # Causal sim: binary outcome with a rare outcome in study 1 (k = 15)
 
-Date: 2026-11-05. Status: **drafted at the user's request; the user will
-implement it (or ask Claude to) at home.**
+Date: 2026-11-05. Status: **code changes and checks done 2026-11-07
+(Claude, at the user's request); the full run, table and paper steps are
+the user's.**
+
+## Outcome (2026-11-07)
+
+Code changes 1-3 implemented as below; `simulate_study()` also gained
+`binary_index()`, `binary_mean()` and `validate_binary_denominator()`.
+Checks (scratch, sequential backend because the sandbox blocks the sockets
+of multisession workers):
+1. Defaults unchanged: 2 replicates with the n = 3000 noise settings
+   reproduce reps 1-2 of `causal_sim_noise_n3000_reps1000/estimates.csv`
+   exactly (984 rows, max difference 0).
+2. Thinning (n = 1e6, k = 15): prevalence 0.0616 (model 0.0618); decile
+   bins of eta within 1.4 binomial s.e. of 1 / (15 + exp(eta)); arm means
+   0.0611 / 0.0623 against model 0.0612 / 0.0624; Y_15 <= Y_1 always, and
+   X, Z, Ycontin unchanged.
+3. Truth: k = 15 widths 0.051, 0.093, 0.130, 0.165; `binary_mean(X, 1)` is
+   bit-identical to DGK's formula (the saved true_bands.csv differs by
+   5e-16, CSV rounding only).
+4. Smoke run (`--reps 2 --binary-denominator-1 15 --outcomes binary`, grids
+   as in the full run): 3/3 sanity checks pass; about 10 s per replicate
+   on one process with every grf thread (39 CPU-s), so the full run is
+   about 1.5 h on 9 workers.
+
+Docs updated: header of `R/causal_sim.R`, README, CLAUDE.md, and
+`causal_sim_code_explained.tex` (compiled, no errors or overfull boxes).
 
 ## Why
 

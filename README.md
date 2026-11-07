@@ -89,6 +89,7 @@ Run entry scripts as modules from the repo root with the environment active, e.g
 python -m src.toy_sim            # defaults: --seed 7 --reps 5000 --frac-a 0.3
 python -m src.toy_sim --help     # all options
 python -m src.toy_convergence    # defaults: --seed 7 --reps 5000 --gaps 0.05 0.2 0.5 --uniform-gaps 0.01 0.02 0.05 0.1 0.2 --ratio 2
+python -m src.latex.toy_sim_paper_figs  # paper figure from results.csv (no rerun): coverage_by_gap_r1-3-5.pdf; --ratios 1 3 5
 python -m pytest                 # unit tests in tests/ (needs pytest, not yet in requirements.txt)
 ```
 
@@ -105,6 +106,12 @@ The design of `quality_reports/plans/done/2026-11-03_convex-advantage-noise-desi
 
 ```
 caffeinate -is Rscript R/causal_sim.R --noise-scale-2 2 --lambdas-1 3:5:0.05 --lambdas-2 1:3:0.05 --out-dir src/outputs/causal_sim_noise
+```
+
+The rare-outcome design of `quality_reports/plans/done/2026-11-05_binary-rare-outcome-k15.md` makes study 1's binary outcome rare, P(Y = 1 | x) = 1 / (k + exp(eta(x))) with k = 15 (prevalence about 6%), and estimates the binary outcome only (`--outcomes binary` skips DGK's slow continuous estimator; about 1.5 h for 1000 replicates on 9 workers):
+
+```
+caffeinate -is Rscript R/causal_sim.R --reps 1000 --n1 3000 --n2 500 --binary-denominator-1 15 --outcomes binary --lambdas-1 1:4:0.05 --lambdas-2 1:2:0.05 --workers 9 --out-dir src/outputs/causal_sim_binary_k15
 ```
 
 Replicates run in parallel (default: available cores minus 1; one grf thread per worker); results do not depend on the number of workers. The default Λ grid (both studies) is DGK's, `seq(1, 3, length.out = 20)`; `--lambdas-1` and `--lambdas-2` take comma-separated values or `from:to:by`. On a 10-core M4, 1000 replicates take about 105 min (both outcomes); the total run time is printed at the end and recorded in `run_info.txt`.

@@ -149,31 +149,48 @@ bounds_from_dgk <- function(out, outcome, n) {
 
 
 #' DVDS estimates of the sharp ATE bounds and their variances, per Lambda,
-#' for the binary and the continuous outcome.
+#' for the binary and/or the continuous outcome.
 #'
 #' Calls DGK's dvds.binary() (one Lambda at a time, as in dvds_sim.R lines
-#' 45-49) and dvds.continuous() (all Lambdas at once, line 54).
+#' 45-49) and dvds.continuous() (all Lambdas at once, line 54). DGK's
+#' nuisance lines are run in full whichever outcomes are asked for; leaving
+#' out "continuous" skips dvds.continuous(), whose quantile and CVaR forests
+#' are the slow part.
 #'
 #' @param study List from simulate_dgk() (or a fold of it).
 #' @param lambdas Sensitivity parameters, each >= 1.
 #' @param num_threads grf threads per forest; NULL uses every core.
+#' @param outcomes Non-empty subset of "binary", "continuous".
 #' @return data.frame, one row per (outcome, Lambda); see bounds_from_dgk().
-dvds_bounds <- function(study, lambdas, num_threads = NULL) {
+dvds_bounds <- function(study, lambdas, num_threads = NULL,
+                        outcomes = c("binary", "continuous")) {
   validate_lambdas(lambdas)
+  if (length(outcomes) == 0 ||
+      !all(outcomes %in% c("binary", "continuous"))) {
+    stop(sprintf(paste("outcomes must be a non-empty subset of binary,",
+                       "continuous; got %s"),
+                 paste(outcomes, collapse = ", ")))
+  }
   if (min(sum(study$Z), sum(1 - study$Z)) < MIN_ARM_SIZE) {
     stop(sprintf("each arm needs >= %d units, got %d treated, %d control",
                  MIN_ARM_SIZE, sum(study$Z), sum(1 - study$Z)))
   }
   dgk <- load_dgk(num_threads)
   nu <- dgk_nuisances(study, dgk)
-  binary <- do.call(rbind, lapply(lambdas, function(l) {
-    dgk$dvds.binary(Y = study$Ybinary, Z = study$Z, mu0 = nu$mu0binary,
-                    mu1 = nu$mu1binary, e = nu$e, Lambda = l)
-  }))
-  continuous <- dgk$dvds.continuous(
-    X = study$X, Y = study$Ycontin, Z = study$Z, mu0 = nu$mu0contin,
-    mu1 = nu$mu1contin, e = nu$e, Lambdas = lambdas)
   n <- length(study$Z)
-  rbind(bounds_from_dgk(binary, "binary", n),
-        bounds_from_dgk(continuous, "continuous", n))
+  rows <- list()
+  if ("binary" %in% outcomes) {
+    binary <- do.call(rbind, lapply(lambdas, function(l) {
+      dgk$dvds.binary(Y = study$Ybinary, Z = study$Z, mu0 = nu$mu0binary,
+                      mu1 = nu$mu1binary, e = nu$e, Lambda = l)
+    }))
+    rows[[length(rows) + 1]] <- bounds_from_dgk(binary, "binary", n)
+  }
+  if ("continuous" %in% outcomes) {
+    continuous <- dgk$dvds.continuous(
+      X = study$X, Y = study$Ycontin, Z = study$Z, mu0 = nu$mu0contin,
+      mu1 = nu$mu1contin, e = nu$e, Lambdas = lambdas)
+    rows[[length(rows) + 1]] <- bounds_from_dgk(continuous, "continuous", n)
+  }
+  do.call(rbind, rows)
 }

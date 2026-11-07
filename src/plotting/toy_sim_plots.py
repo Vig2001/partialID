@@ -3,7 +3,7 @@
 Results come as a DataFrame with one row per (g_L, g_U, r, method) cell.
 """
 
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -13,12 +13,20 @@ import pandas as pd
 from matplotlib import axes as mpl_axes
 from matplotlib import colors
 
-PALETTE = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100")
-MARKERS = ("o", "s", "^", "D")
+# Categorical slots in fixed order (dataviz reference palette; the six
+# slots pass its colour-blindness checks on a light surface).
+PALETTE = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300")
+MARKERS = ("o", "s", "^", "D", "v", "P")
 DIVERGING = colors.LinearSegmentedColormap.from_list(
     "div", ["#d03b3b", "#f0efec", "#2a78d6"]
 )
 DPI = 150
+GREY_BAND = "#e5e4e0"
+GREY_LINE = "#73726c"
+# Sideways shift between methods on a categorical gap axis, so that
+# overlapping lines stay visible.
+DODGE = 0.04
+PAPER_FONT_SIZE = 8
 
 
 def method_styles(methods: Sequence[str]) -> dict[str, tuple[str, str]]:
@@ -111,6 +119,90 @@ def plot_per_end(
     axes[0, 0].legend(frameon=False, fontsize=8)
     fig.tight_layout()
     fig.savefig(out_path, dpi=DPI)
+    plt.close(fig)
+
+
+def equal_gap_series(
+    df: pd.DataFrame,
+    method: str,
+    r: float,
+    column: str,
+    gaps: Sequence[float],
+) -> np.ndarray:
+    """Returns column at equal gaps g_L = g_U = g for one method and ratio r.
+
+    Raises:
+        ValueError: If a gap has no such cell.
+    """
+    sub = df[(df.method == method) & (df.r == r) & (df.g_L == df.g_U)]
+    sub = sub.set_index("g_L")
+    missing = sorted(set(gaps) - set(sub.index))
+    if missing:
+        raise ValueError(f"No equal-gap cells for {method=}, {r=}: {missing}")
+    return sub.loc[list(gaps), column].to_numpy()
+
+
+def plot_coverage_by_gap(
+    df: pd.DataFrame,
+    methods: Sequence[str],
+    labels: dict[str, str],
+    dashed: Collection[str],
+    gaps: Sequence[float],
+    ratios: Sequence[float],
+    nominal: float,
+    reps: int,
+    out_path: Path,
+    figsize: tuple[float, float] = (6.0, 2.6),
+) -> None:
+    """Joint coverage against equal gaps g_L = g_U = g, one panel per ratio r.
+
+    Gaps are equally spaced on the x-axis, not to scale, and each method is
+    shifted slightly sideways (DODGE). The grey band is nominal +/- 2
+    binomial MC s.e. The legend sits below the panels in rows of three.
+
+    Args:
+        df: Simulation results (results.csv of src/toy_sim.py).
+        methods: Methods to plot; styled and listed in this order.
+        labels: Legend label per method.
+        dashed: Methods drawn with dashed lines; the others are solid.
+        gaps: Equal gaps g, in plotting order.
+        ratios: Ratios r, one panel each.
+        nominal: Nominal joint coverage, 1 - alpha.
+        reps: Monte Carlo replicates per cell, for the grey band.
+        out_path: Where to save the figure.
+        figsize: Figure size in inches; include it at this size.
+    """
+    styles = method_styles(methods)
+    pos = np.arange(len(gaps))
+    offsets = DODGE * (np.arange(len(methods)) - (len(methods) - 1) / 2)
+    band = 2 * np.sqrt(nominal * (1 - nominal) / reps)
+    with plt.rc_context({"font.size": PAPER_FONT_SIZE}):
+        fig, axes = plt.subplots(1, len(ratios), figsize=figsize,
+                                 sharey=True, squeeze=False)
+        for ax, r in zip(axes[0], ratios):
+            ax.axhspan(nominal - band, nominal + band, color=GREY_BAND, lw=0)
+            ax.axhline(nominal, color=GREY_LINE, lw=0.8)
+            for method, offset in zip(methods, offsets):
+                colour, marker = styles[method]
+                ax.plot(pos + offset,
+                        equal_gap_series(df, method, r, "cov_joint", gaps),
+                        color=colour, marker=marker, ms=3.5, lw=1.2,
+                        ls="--" if method in dashed else "-",
+                        label=labels[method])
+            ax.set_xticks(pos, [f"{g:g}" for g in gaps])
+            ax.set_xlabel("$g_L = g_U$ (not to scale)")
+            ax.set_title(f"$r = {r:g}$")
+            style_axes(ax)
+        axes[0, 0].set_ylabel("Joint coverage")
+        handles, names = axes[0, 0].get_legend_handles_labels()
+        ncol = 3
+        # The legend fills column by column; reorder so it reads by row.
+        order = [i for col in range(ncol) for i in range(col, len(names), ncol)]
+        fig.legend([handles[i] for i in order], [names[i] for i in order],
+                   loc="lower center", ncol=ncol, frameon=False,
+                   bbox_to_anchor=(0.5, 0))
+        fig.tight_layout(rect=(0, 0.17, 1, 1))
+        fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
 
 

@@ -27,24 +27,62 @@ continuous_mean <- function(X) {
 }
 
 
-#' Draws one study: DGK's DGP, with the continuous outcome noise scaled.
+#' DGK's linear index of the binary outcome, eta(x) (dvds_sim.R line 25).
+binary_index <- function(X) {
+  0.5 * X[, 1] + X[, 2] + 0.25 * X[, 2] * X[, 3]
+}
+
+
+#' Stops unless the binary outcome's denominator k is finite and >= 1.
+validate_binary_denominator <- function(denominator) {
+  if (!(length(denominator) == 1 && is.finite(denominator) &&
+        denominator >= 1)) {
+    stop(sprintf("binary denominator must be finite and >= 1, got %s",
+                 paste(denominator, collapse = ", ")))
+  }
+}
+
+
+#' P(Y = 1 | x) of the binary outcome, p_k(x) = 1 / (k + exp(eta(x))).
+#'
+#' k = 1 is DGK's outcome (prevalence 0.5); larger k makes it rarer (about
+#' 0.062 at k = 15).
+binary_mean <- function(X, denominator = 1) {
+  validate_binary_denominator(denominator)
+  1 / (denominator + exp(binary_index(X)))
+}
+
+
+#' Draws one study: DGK's DGP, with the continuous outcome noise scaled and
+#' the binary outcome optionally made rarer.
 #'
 #' Calls DGK's verbatim simulate_dgk() and then rescales the noise around
-#' m(X), so Y = m(X) + noise_scale (1 + X4^2) eps. The random draws are
-#' identical to DGK's, and noise_scale = 1 returns their study unchanged.
-#' The binary outcome, the covariates and the treatment are untouched.
+#' m(X), so Y = m(X) + noise_scale (1 + X4^2) eps. With binary_denominator
+#' k > 1, DGK's binary outcome is thinned: each Y = 1 is kept with
+#' probability p_k(X) / p_1(X) <= 1, so P(Y = 1 | X) = p_k(X) exactly, Y
+#' still does not depend on Z given X, and the new outcome never exceeds
+#' DGK's. Thinning draws n uniforms after DGK's draws; with k = 1 there are
+#' no extra draws, and noise_scale = 1, k = 1 return DGK's study unchanged.
 #'
 #' @param n Sample size.
 #' @param noise_scale Multiplier c > 0 of the continuous outcome's noise.
+#' @param binary_denominator k >= 1 in p_k(x) (binary_mean()).
 #' @return List with X, Z, Ybinary and Ycontin, as simulate_dgk().
-simulate_study <- function(n, noise_scale = 1) {
+simulate_study <- function(n, noise_scale = 1, binary_denominator = 1) {
   if (!(is.finite(noise_scale) && noise_scale > 0)) {
     stop(sprintf("noise_scale must be positive, got %s", noise_scale))
   }
+  validate_binary_denominator(binary_denominator)
   study <- simulate_dgk(n)
   if (noise_scale != 1) {
     m <- continuous_mean(study$X)
     study$Ycontin <- m + noise_scale * (study$Ycontin - m)
+  }
+  if (binary_denominator != 1) {
+    keep_prob <- binary_mean(study$X, binary_denominator) /
+      binary_mean(study$X, 1)
+    keep <- runif(n) < keep_prob
+    study$Ybinary <- as.integer(study$Ybinary == 1 & keep)
   }
   study
 }
@@ -102,9 +140,11 @@ continuous_true_band <- function(lambdas, noise_scale = 1) {
 #' and ATE+ = psi1+ - psi0-; ATE- likewise with min and max exchanged. The
 #' caller's random-number state is restored afterwards.
 #'
+#' @param denominator k in mu(x) = p_k(x) (binary_mean()); 1 is DGK's.
 #' @return data.frame with lambda, lower, upper and their Monte Carlo s.e.
-binary_true_band <- function(lambdas) {
+binary_true_band <- function(lambdas, denominator = 1) {
   validate_lambdas(lambdas)
+  validate_binary_denominator(denominator)
   old_kind <- RNGkind()
   old_seed <- if (exists(".Random.seed", envir = globalenv())) {
     get(".Random.seed", envir = globalenv())
@@ -122,7 +162,7 @@ binary_true_band <- function(lambdas) {
   n <- TRUTH_MC_SIZE
   X <- matrix(runif(n * 5, -1, 1), nrow = n)
   e <- 1 / (1 + exp(X[, 1] + 0.5 * (X[, 2] > 0) + 0.5 * X[, 2] * X[, 3]))
-  mu <- 1 / (1 + exp(0.5 * X[, 1] + X[, 2] + 0.25 * X[, 2] * X[, 3]))
+  mu <- binary_mean(X, denominator)
   # Per-draw contributions to ATE+ and ATE-; their means are the bounds.
   ate_plus <- sapply(lambdas, function(l) {
     (e * mu + (1 - e) * pmin(1 - 1 / l + mu / l, mu * l)) -
@@ -144,15 +184,17 @@ binary_true_band <- function(lambdas) {
 #' @param lambdas Sensitivity parameters; lambda_index is their position.
 #' @param noise_scale Multiplier of the continuous outcome noise; the binary
 #'   band does not depend on it.
+#' @param binary_denominator k of the binary outcome (binary_mean()); the
+#'   continuous band does not depend on it.
 #' @return data.frame with outcome, lambda_index, lambda, lower, upper,
 #'   lower_mcse and upper_mcse (0 for the closed-form continuous band).
-true_bands <- function(lambdas, noise_scale = 1) {
+true_bands <- function(lambdas, noise_scale = 1, binary_denominator = 1) {
   continuous <- continuous_true_band(lambdas, noise_scale)
   continuous$lower_mcse <- 0
   continuous$upper_mcse <- 0
   rbind(
     data.frame(outcome = "binary", lambda_index = seq_along(lambdas),
-               binary_true_band(lambdas)),
+               binary_true_band(lambdas, binary_denominator)),
     data.frame(outcome = "continuous", lambda_index = seq_along(lambdas),
                continuous))
 }

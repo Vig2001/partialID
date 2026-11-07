@@ -1,7 +1,9 @@
 # Two observational studies (OS) from the DGK DGP, differing in sample size
 # n_k, sensitivity parameter grid Lambda_k and (optionally) the scale c_2 of
-# study 2's continuous outcome noise. Each study has a binary and a
-# continuous outcome (DGK's two designs, drawn from the same X and Z). For
+# study 2's continuous outcome noise and the rarity k_1 of study 1's binary
+# outcome, P(Y = 1 | x) = 1 / (k_1 + exp(eta(x))) (DGK's is k = 1). Each
+# study has a binary and a continuous outcome (DGK's two designs, drawn from
+# the same X and Z; --outcomes can run one of them only). For
 # each outcome, each study gives DVDS estimates of its sharp ATE bounds
 # [L_k, U_k], computed with DGK's own code (R/helpers/dgk.R; their repository
 # cloned in external/). CIs for the fused band [max_k L_k, min_k U_k] are
@@ -14,13 +16,16 @@
 # Usage, from the repo root:
 #   Rscript R/causal_sim.R [--seed 1] [--reps 1000] [--n1 2000] [--n2 500]
 #     [--lambdas-1 1,1.5,... | 3:5:0.05] [--lambdas-2 ...] [--noise-scale-2 1]
+#     [--binary-denominator-1 1] [--outcomes binary,continuous]
 #     [--frac-a 0.3] [--alpha 0.05] [--workers W] [--backend multisession]
 #     [--out-dir src/outputs/causal_sim] [--summarise-only]
-# The defaults reproduce the baseline run (both studies on DGK's grid, c = 1).
+# The defaults reproduce the baseline run (both studies on DGK's grid,
+# c = 1, k = 1, both outcomes).
 #
 # Plans:   quality_reports/plans/done/2026-11-02_dvds-r-two-os.md,
 #          2026-11-02_dgk-exact-replication.md, 2026-11-02_causal-sim-binary.md,
-#          2026-11-03_convex-advantage-noise-design.md
+#          2026-11-03_convex-advantage-noise-design.md,
+#          2026-11-05_binary-rare-outcome-k15.md
 # Notes:   partialID_Overleaf/Notes/Simulation_Notes/causal_sim_code_explained.tex
 # Outputs: src/outputs/causal_sim/ (summary.csv: coverage and widths only;
 #          summary_full.csv: every summary column)
@@ -81,6 +86,14 @@ parse_args <- function(argv = commandArgs(trailingOnly = TRUE)) {
         default = 1,
         help = paste("Scale c of study 2's continuous outcome noise; its true",
                      "band scales by c [default %default].")),
+    opt("--binary-denominator-1", dest = "binary_denominator_1",
+        type = "double", default = 1,
+        help = paste("k >= 1 for study 1's binary outcome, P(Y = 1 | x) =",
+                     "1 / (k + exp(eta(x))); study 2 keeps DGK's k = 1",
+                     "[default %default].")),
+    opt("--outcomes", type = "character", default = "binary,continuous",
+        help = paste("Comma-separated outcomes to estimate; 'binary' alone",
+                     "skips the slow continuous DVDS [default %default].")),
     opt("--frac-a", dest = "frac_a", type = "double", default = 0.3,
         help = "Fraction of each study in fold A [default %default]."),
     opt("--alpha", type = "double", default = 0.05,
@@ -137,6 +150,13 @@ make_config <- function(args) {
     stop(sprintf("noise-scale-2 must be positive, got %s",
                  args$noise_scale_2))
   }
+  validate_binary_denominator(args$binary_denominator_1)
+  outcomes <- strsplit(args$outcomes, ",", fixed = TRUE)[[1]]
+  if (length(outcomes) == 0 || !all(outcomes %in% OUTCOMES) ||
+      anyDuplicated(outcomes)) {
+    stop(sprintf("outcomes must be distinct values from %s, got %s",
+                 paste(OUTCOMES, collapse = ", "), args$outcomes))
+  }
   if (args$reps < 2) stop(sprintf("reps must be >= 2, got %d", args$reps))
   if (!(args$alpha > 0 && args$alpha < 1)) {
     stop(sprintf("alpha must lie in (0, 1), got %s", args$alpha))
@@ -157,6 +177,8 @@ make_config <- function(args) {
        alpha = args$alpha, z = qnorm(1 - args$alpha / 2),
        z_calibrated = qnorm(1 - args$alpha / 4), lambdas = lambdas,
        noise_scale = c(1, args$noise_scale_2),
+       binary_denominator = c(args$binary_denominator_1, 1),
+       outcomes = OUTCOMES[OUTCOMES %in% outcomes],
        workers = args$workers, backend = args$backend,
        out_dir = args$out_dir)
 }
@@ -188,7 +210,8 @@ replicate_seeds <- function(seed, reps) {
 #'   and one step after it.
 #' @return data.frame of dvds_bounds() rows with columns rep, study and fit.
 simulate_replicate <- function(rep, cfg, progress, num_threads) {
-  studies <- Map(simulate_study, cfg$n, cfg$noise_scale)
+  studies <- Map(simulate_study, cfg$n, cfg$noise_scale,
+                 cfg$binary_denominator)
   rows <- list()
   for (k in seq_along(studies)) {
     folds <- split_folds(cfg$n[k], cfg$frac_a)
@@ -199,7 +222,8 @@ simulate_replicate <- function(rep, cfg, progress, num_threads) {
       label <- sprintf("rep %d/%d: %s, study %d", rep, cfg$reps,
                        FIT_LABELS[[fit]], k)
       progress(message = label, amount = 0)
-      est <- dvds_bounds(samples[[fit]], cfg$lambdas[[k]], num_threads)
+      est <- dvds_bounds(samples[[fit]], cfg$lambdas[[k]], num_threads,
+                         cfg$outcomes)
       rows[[length(rows) + 1]] <- data.frame(rep = rep, study = k,
                                              fit = fit, est)
       progress(message = label, amount = 1)
@@ -315,10 +339,13 @@ pair_cis <- function(arrays, i, j, z, z_calibrated) {
 #' True bands of both studies, one row per (study, outcome, Lambda).
 #'
 #' Each study has its own Lambda grid; study 2's continuous band is scaled
-#' by its noise scale c (continuous_true_band()).
+#' by its noise scale c (continuous_true_band()), and each study's binary
+#' band uses its own denominator k (binary_true_band()).
 study_true_bands <- function(cfg) {
   do.call(rbind, lapply(1:2, function(k) {
-    data.frame(study = k, true_bands(cfg$lambdas[[k]], cfg$noise_scale[k]))
+    data.frame(study = k,
+               true_bands(cfg$lambdas[[k]], cfg$noise_scale[k],
+                          cfg$binary_denominator[k]))
   }))
 }
 
@@ -531,11 +558,13 @@ write_run_info <- function(cfg, start, path) {
     sprintf("seed: %d | reps: %d | n: %s | frac_a: %g | alpha: %g",
             cfg$seed, cfg$reps, paste(cfg$n, collapse = ", "), cfg$frac_a,
             cfg$alpha),
-    sprintf("outcomes: %s", paste(OUTCOMES, collapse = ", ")),
+    sprintf("outcomes: %s", paste(cfg$outcomes, collapse = ", ")),
     sprintf("lambdas study 1: %s", paste(cfg$lambdas[[1]], collapse = ", ")),
     sprintf("lambdas study 2: %s", paste(cfg$lambdas[[2]], collapse = ", ")),
     sprintf("noise scale (continuous outcome): study 1 %g, study 2 %g",
             cfg$noise_scale[1], cfg$noise_scale[2]),
+    sprintf("binary denominator k: study 1 %g, study 2 %g",
+            cfg$binary_denominator[1], cfg$binary_denominator[2]),
     sprintf("backend: %s | workers: %d", cfg$backend, cfg$workers),
     sprintf("simulation run time: %s", format_elapsed(start)),
     R.version.string,
