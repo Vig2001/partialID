@@ -9,6 +9,8 @@ The methods differ in how the two bands are fused:
       (2013), which correct each bound before taking the max or min;
     - CLR convex: the same over every convex combination of the two bounds,
       i.e. a convex CI without a sample split, calibrated by CLR.
+Both CLR methods omit CLR's adaptive inequality selection step, so their
+critical values are fixed quantiles over all bounds (all weights).
 Each end uses critical value z, so z = Phi^{-1}(1 - alpha / 2) gives a
 Bonferroni joint CI for the band.
 """
@@ -17,14 +19,13 @@ from collections.abc import Sequence
 from typing import NamedTuple
 
 import numpy as np
+from scipy import optimize
 from scipy import stats
 
 from src.helpers import weight_optimisers
 
-QUADRANT = np.pi / 2  # angle spanned by the standardised errors of all weights
-TUBE_NODES, TUBE_WEIGHTS = np.polynomial.legendre.leggauss(32)
-TUBE_BISECTIONS = 60
-TUBE_K_MAX = 8.0  # upper bracket for the tube quantile
+QUADRANT_MIN_LEVEL = 0.25  # cdf at k = 0 of the sup over all weights
+QUADRANT_K_MAX = 8.0  # upper bracket for the quantile of that sup
 
 
 class CIResult(NamedTuple):
@@ -217,55 +218,58 @@ def cross_fit_convex_ci(
     )
 
 
-def _clr_bound(
-    U: np.ndarray, se: np.ndarray, n_kept: np.ndarray, level: float
+def _smallest_corrected(
+    theta: np.ndarray, s: np.ndarray, k: float
 ) -> tuple[np.ndarray, np.ndarray]:
-    """min_j (U_j + k se_j), k the level-quantile of the max of n_kept N(0, 1).
+    """min_j (theta_j + k s_j) in each row, and the column j attaining it.
 
-    The kept errors are independent, so k = Phi^{-1}(level^(1 / n_kept)).
+    Args:
+        theta: Bound estimates, shape (R, J); one column per bound.
+        s: Their standard errors, shape (R, J).
+        k: Critical value.
 
     Returns:
-        The bound, shape (R,), and the index of the dataset attaining it.
+        The smallest corrected bound and its column index, each shape (R,).
     """
-    k = stats.norm.ppf(level ** (1 / n_kept))
-    corrected = U + k[:, None] * se
+    corrected = theta + k * s
     attained = np.argmin(corrected, axis=1)
-    return corrected[np.arange(U.shape[0]), attained], attained
+    return corrected[np.arange(theta.shape[0]), attained], attained
 
 
 def _clr_upper(
-    U: np.ndarray, se: np.ndarray, p: float, gamma: float
+    theta: np.ndarray, s: np.ndarray, k_p: float, k_half: float
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """CLR upper confidence bound and estimate for min(U_1, U_2).
+    """CLR upper end for min_j theta_j, every bound kept (no selection).
 
     Returns:
-        The level-p bound, the level-1/2 estimate and the index of the
-        dataset attaining the level-p bound, each shape (R,).
+        The level-p CI end (critical value k_p), the half-median-unbiased
+        estimate (k_half) and the column attaining the CI end, each (R,).
     """
-    # Selection (CLR Algorithm 1, step 4): drop dataset j if U_j exceeds the
-    # smallest corrected bound by more than 2 k_gamma se_j. Only the critical
-    # value uses the kept set; the min below runs over both datasets.
-    k_gamma = stats.norm.ppf(np.sqrt(gamma))
-    smallest = np.min(U + k_gamma * se, axis=1, keepdims=True)
-    n_kept = np.sum(U <= smallest + 2 * k_gamma * se, axis=1)
-    assert np.all(n_kept >= 1), "the dataset attaining the min is kept"
-    ci_end, attained = _clr_bound(U, se, n_kept, p)
-    estimate, _ = _clr_bound(U, se, n_kept, 0.5)
+    ci_end, attained = _smallest_corrected(theta, s, k_p)
+    estimate, _ = _smallest_corrected(theta, s, k_half)
     return ci_end, estimate, attained
 
 
+def _max_of_two_quantile(level: float) -> float:
+    """The level-quantile of max(Z_1, Z_2), Z_1 and Z_2 independent N(0, 1).
+
+    P(max(Z_1, Z_2) <= k) = Phi(k)^2, so k = Phi^{-1}(sqrt(level)).
+    """
+    return float(stats.norm.ppf(np.sqrt(level)))
+
+
 def clr_intersection_ci(
-    L: np.ndarray, U: np.ndarray, s2: np.ndarray, p: float, gamma: float
+    L: np.ndarray, U: np.ndarray, s2: np.ndarray, p: float
 ) -> CIResult:
     """Intersection CI of Chernozhukov, Lee and Rosen (2013), two datasets.
 
     Each end is an intersection bound, max(L_1, L_2) or min(U_1, U_2). At
-    the upper end (CLR, Algorithm 1), each estimate is corrected upward,
-    U_j + k se_j, and the CI end is the smallest corrected estimate; k is
-    the p-quantile of the maximum standardised error over the datasets kept
-    by a selection step at level gamma. The lower end is the mirror image.
-    The datasets are independent, so the quantiles are closed form,
-    Phi^{-1}(p^(1/m)) with m datasets kept, instead of CLR's simulation.
+    the upper end each estimate is corrected upward, U_j + k se_j, and the
+    CI end is the smallest corrected estimate. There is no adaptive
+    inequality selection step: both datasets are always kept, so k is the
+    p-quantile of the larger of the two standardised errors. These are
+    independent N(0, 1), so k = Phi^{-1}(sqrt(p)), 2.239 at p = 0.975. The
+    lower end is the mirror image.
 
     Args:
         L: Lower bound estimates, shape (R, 2); column k is dataset k + 1.
@@ -273,129 +277,66 @@ def clr_intersection_ci(
         s2: Variances of the bound estimates, shape (R, 2).
         p: Coverage level of each one-sided end, e.g. 1 - alpha / 2 for a
             Bonferroni joint CI.
-        gamma: Selection level, CLR's gamma_n = 1 - 0.1 / log(n).
 
     Returns:
-        CIResult; L_hat and U_hat are CLR's half-median-unbiased estimates
-        (level 1/2); w_L and w_U are 1.0 where dataset 1 attains that CI
-        end.
+        CIResult; L_hat and U_hat are the half-median-unbiased estimates
+        (level 1/2, k = Phi^{-1}(sqrt(1/2))); w_L and w_U are 1.0 where
+        dataset 1 attains that CI end.
 
     Raises:
-        ValueError: If the shapes disagree, s2 < 0, or p or gamma is
-            outside (0, 1).
+        ValueError: If the shapes disagree, s2 < 0, or p is outside (0, 1).
     """
     _validate_bounds(L, U, s2)
-    for name, level in (("p", p), ("gamma", gamma)):
-        if not 0 < level < 1:
-            raise ValueError(f"{name} must lie in (0, 1), got {level=}")
+    if not 0 < p < 1:
+        raise ValueError(f"p must lie in (0, 1), got {p=}")
     se = np.sqrt(s2)
-    hi, U_hat, k_hi = _clr_upper(U, se, p, gamma)
+    k_p, k_half = _max_of_two_quantile(p), _max_of_two_quantile(0.5)
+    hi, U_hat, j_hi = _clr_upper(U, se, k_p, k_half)
     # max_j L_j = -min_j (-L_j), so the lower end is the upper end of -L.
-    neg_lo, neg_L_hat, k_lo = _clr_upper(-L, se, p, gamma)
+    neg_lo, neg_L_hat, j_lo = _clr_upper(-L, se, k_p, k_half)
     return CIResult(
         lo=-neg_lo,
         hi=hi,
         L_hat=-neg_L_hat,
         U_hat=U_hat,
-        w_L=(k_lo == 0).astype(float),
-        w_U=(k_hi == 0).astype(float),
+        w_L=(j_lo == 0).astype(float),
+        w_U=(j_hi == 0).astype(float),
     )
 
 
-def _tube_cdf(k: np.ndarray, arc: np.ndarray, gap: np.ndarray) -> np.ndarray:
-    """P(sup_a a'Z <= k), Z ~ N(0, I_2), a over a set of unit vectors.
+def _quadrant_sup_cdf(k: float) -> float:
+    """P(sup_w a(w)'Z <= k) for k >= 0, with Z ~ N(0, I_2).
 
-    The set lies in the positive quadrant: arcs of total angle arc, with an
-    angle gap between two arcs (gap = 0 for a single arc). Writing
-    Z = rho (cos psi, sin psi), the sup is rho cos d(psi), with d the angular
-    distance from psi to the set, psi uniform and rho^2 ~ chi^2_2; for k > 0
-    this gives Phi(k) - arc / (2 pi) exp(-k^2 / 2) - I(gap / 2) / pi, with
-    I(x) = int_0^x exp(-k^2 / (2 cos^2 t)) dt (Gauss-Legendre). One point
-    gives Phi(k); the two axes give Phi(k)^2.
+    a(w) = (w se_1, (1 - w) se_2) / s(w) is the standardised-error direction
+    of weight w; as w runs over [0, 1] it sweeps every unit vector in the
+    positive quadrant. So the sup is ||Z|| when Z_1, Z_2 > 0 (attained at
+    a = Z / ||Z||) and max(Z_1, Z_2) otherwise. For k >= 0 it exceeds k in
+    three disjoint ways: Z_1 > k and Z_2 <= 0, or Z_2 > k and Z_1 <= 0, each
+    with probability {1 - Phi(k)} / 2; or Z in the positive quadrant with
+    ||Z|| > k, with probability exp(-k^2 / 2) / 4, because ||Z||^2 ~ chi^2_2
+    and the direction of Z is uniform and independent of ||Z||.
     """
-    half_gap = gap / 2
-    t = half_gap[:, None] * (TUBE_NODES + 1) / 2
-    integrand = np.exp(-k[:, None] ** 2 / (2 * np.cos(t) ** 2))
-    tail = half_gap / 2 * np.sum(TUBE_WEIGHTS * integrand, axis=1)
-    return (stats.norm.cdf(k) - arc / (2 * np.pi) * np.exp(-k**2 / 2)
-            - tail / np.pi)
+    return stats.norm.cdf(k) - np.exp(-k**2 / 2) / 4
 
 
-def _tube_quantile(
-    level: float, arc: np.ndarray, gap: np.ndarray
-) -> np.ndarray:
-    """The level-quantile of sup_a a'Z in _tube_cdf, by bisection on [0, 8]."""
-    lo, hi = np.zeros_like(arc), np.full_like(arc, TUBE_K_MAX)
-    for _ in range(TUBE_BISECTIONS):
-        mid = (lo + hi) / 2
-        below = _tube_cdf(mid, arc, gap) < level
-        lo, hi = np.where(below, mid, lo), np.where(below, hi, mid)
-    return (lo + hi) / 2
+def _quadrant_sup_quantile(level: float) -> float:
+    """The level-quantile of the sup in _quadrant_sup_cdf, for level > 1/4.
 
-
-def _kept_arcs(
-    theta: np.ndarray,
-    s: np.ndarray,
-    se: np.ndarray,
-    w_grid: np.ndarray,
-    gamma: float,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Arcs of standardised-error directions kept by CLR's selection step.
-
-    Weight w has direction a(w) = (w se_1, (1 - w) se_2) / s(w), at angle
-    phi(w) from (1, 0); phi falls from pi/2 at w = 0 to 0 at w = 1.
-
-    Returns:
-        Total angle of the kept arcs and the angle between them (0 for a
-        single arc), each shape (R,).
+    The cdf is 1/4 at k = 0, so for level > 1/4 the quantile is positive
+    and the formula applies: 2.353 at level 0.975, 0.563 at level 1/2.
     """
-    k_gamma = _tube_quantile(gamma, np.array([QUADRANT]), np.array([0.0]))[0]
-    smallest = np.min(theta + k_gamma * s, axis=1, keepdims=True)
-    dropped = theta > smallest + 2 * k_gamma * s
-    any_dropped = dropped.any(axis=1)
-    first = np.argmax(dropped, axis=1)
-    last = w_grid.size - 1 - np.argmax(dropped[:, ::-1], axis=1)
-    # theta - 2 k_gamma s is concave in w, so the dropped weights are one
-    # interval: one kept arc if it reaches w = 0 or 1, otherwise two.
-    assert np.all(~any_dropped | (dropped.sum(axis=1) == last - first + 1))
-    half_step = (w_grid[1] - w_grid[0]) / 2
-
-    def angle(w):
-        return np.arctan2((1 - w) * se[:, 1], w * se[:, 0])
-
-    dropped_angle = np.where(
-        any_dropped,
-        angle(np.clip(w_grid[first] - half_step, 0, 1))
-        - angle(np.clip(w_grid[last] + half_step, 0, 1)),
-        0.0,
+    return optimize.brentq(
+        lambda k: _quadrant_sup_cdf(k) - level, 0.0, QUADRANT_K_MAX
     )
-    at_end = (first == 0) | (last == w_grid.size - 1)
-    gap = np.where(any_dropped & ~at_end, dropped_angle, 0.0)
-    return QUADRANT - dropped_angle, gap
 
 
-def _convex_bound(
-    theta: np.ndarray, s: np.ndarray, w_grid: np.ndarray, k: np.ndarray
+def _convex_family(
+    theta: np.ndarray, s2: np.ndarray, w_grid: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
-    """min over w of theta(w) + k s(w), and the minimising weight."""
-    corrected = theta + k[:, None] * s
-    best = np.argmin(corrected, axis=1)
-    return corrected[np.arange(theta.shape[0]), best], w_grid[best]
-
-
-def _clr_convex_upper(
-    U: np.ndarray, s2: np.ndarray, p: float, gamma: float,
-    w_grid: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """CLR over all convex combinations: bound, estimate and weight at p."""
-    theta = w_grid * U[:, [0]] + (1 - w_grid) * U[:, [1]]
-    s = np.sqrt(w_grid**2 * s2[:, [0]] + (1 - w_grid) ** 2 * s2[:, [1]])
-    arc, gap = _kept_arcs(theta, s, np.sqrt(s2), w_grid, gamma)
-    ci_end, weight = _convex_bound(theta, s, w_grid,
-                                   _tube_quantile(p, arc, gap))
-    estimate, _ = _convex_bound(theta, s, w_grid,
-                                _tube_quantile(0.5, arc, gap))
-    return ci_end, estimate, weight
+    """w theta_1 + (1 - w) theta_2 and its s.e. over the grid, each (R, W)."""
+    combined = w_grid * theta[:, [0]] + (1 - w_grid) * theta[:, [1]]
+    se = np.sqrt(w_grid**2 * s2[:, [0]] + (1 - w_grid) ** 2 * s2[:, [1]])
+    return combined, se
 
 
 def clr_convex_ci(
@@ -403,7 +344,6 @@ def clr_convex_ci(
     U: np.ndarray,
     s2: np.ndarray,
     p: float,
-    gamma: float,
     w_grid: np.ndarray | None = None,
 ) -> CIResult:
     """Convex CI without a sample split, calibrated by CLR over all weights.
@@ -411,45 +351,55 @@ def clr_convex_ci(
     Every convex combination theta(w) = w U_1 + (1 - w) U_2 bounds
     min(U_1, U_2) from above, and the smallest of them equals it, so the
     upper end is an intersection bound over the index set w in [0, 1] (CLR,
-    Algorithm 1, parametric case with two estimates). Each theta_hat(w) is
-    corrected by k s(w), with s(w)^2 = w^2 s2_1 + (1 - w)^2 s2_2, and the CI
-    end is the smallest corrected bound; its minimiser is the reported
-    weight. k is the p-quantile of the sup of the standardised errors over
-    the weights kept by the selection step at level gamma; with two
-    independent estimates this is exact (_tube_cdf), with no simulation. The
+    parametric case with two estimates). Each theta_hat(w) is corrected by
+    k s(w), with s(w)^2 = w^2 s2_1 + (1 - w)^2 s2_2, and the CI end is the
+    smallest corrected bound; its minimiser is the reported weight. There
+    is no adaptive inequality selection step: every weight is kept, so k is
+    the p-quantile of the sup of the standardised errors over all weights,
+    which has a closed form (_quadrant_sup_cdf), 2.353 at p = 0.975. The
     lower end is the mirror image.
 
     Args:
         L: Lower bound estimates, shape (R, 2); column k is dataset k + 1.
         U: Upper bound estimates, shape (R, 2).
         s2: Variances of the bound estimates, shape (R, 2); positive.
-        p: Coverage level of each one-sided end, e.g. 1 - alpha / 2.
-        gamma: Selection level, CLR's gamma_n = 1 - 0.1 / log(n).
+        p: Coverage level of each one-sided end, e.g. 1 - alpha / 2; in
+            (1/4, 1).
         w_grid: Equally spaced weights from 0 to 1; defaults to
             weight_optimisers.W_GRID.
 
     Returns:
-        CIResult; L_hat and U_hat are the estimates at level 1/2; w_L and
-        w_U are the weights on dataset 1 attaining the CI ends.
+        CIResult; L_hat and U_hat are the half-median-unbiased estimates
+        (level 1/2); w_L and w_U are the weights on dataset 1 attaining the
+        CI ends.
 
     Raises:
-        ValueError: If the shapes disagree, s2 <= 0, p or gamma is outside
-            (0, 1), or w_grid is not equally spaced from 0 to 1.
+        ValueError: If the shapes disagree, s2 <= 0, p is outside (1/4, 1),
+            or w_grid is not equally spaced from 0 to 1.
     """
     _validate_bounds(L, U, s2)
     if np.any(s2 <= 0):
         raise ValueError(f"s2 must be positive, got {s2.min()=}")
-    for name, level in (("p", p), ("gamma", gamma)):
-        if not 0 < level < 1:
-            raise ValueError(f"{name} must lie in (0, 1), got {level=}")
+    if not QUADRANT_MIN_LEVEL < p < 1:
+        raise ValueError(
+            f"p must lie in ({QUADRANT_MIN_LEVEL}, 1), got {p=}"
+        )
     w_grid = weight_optimisers.W_GRID if w_grid is None else w_grid
     steps = np.diff(w_grid)
     if (w_grid[0] != 0 or w_grid[-1] != 1 or np.any(steps <= 0)
             or not np.allclose(steps, steps[0])):
         raise ValueError("w_grid must be equally spaced from 0 to 1")
-    hi, U_hat, w_U = _clr_convex_upper(U, s2, p, gamma, w_grid)
+    k_p, k_half = _quadrant_sup_quantile(p), _quadrant_sup_quantile(0.5)
+    theta_U, s = _convex_family(U, s2, w_grid)
+    hi, U_hat, j_hi = _clr_upper(theta_U, s, k_p, k_half)
     # max_w L(w) = -min_w (-L(w)), with the same weight on dataset 1.
-    neg_lo, neg_L_hat, w_L = _clr_convex_upper(-L, s2, p, gamma, w_grid)
+    theta_neg_L, _ = _convex_family(-L, s2, w_grid)
+    neg_lo, neg_L_hat, j_lo = _clr_upper(theta_neg_L, s, k_p, k_half)
     return CIResult(
-        lo=-neg_lo, hi=hi, L_hat=-neg_L_hat, U_hat=U_hat, w_L=w_L, w_U=w_U
+        lo=-neg_lo,
+        hi=hi,
+        L_hat=-neg_L_hat,
+        U_hat=U_hat,
+        w_L=w_grid[j_lo],
+        w_U=w_grid[j_hi],
     )

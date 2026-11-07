@@ -27,11 +27,6 @@ def test_estimate_bounds_is_mean_minus_and_plus_half_width():
     np.testing.assert_allclose(est.s2, [[1 / 3, 4.0]])
 
 
-def test_toy_config_clr_gamma():
-    cfg = toy_sim.ToyConfig()
-    np.testing.assert_allclose(cfg.clr_gamma, 1 - 0.1 / np.log(2500))
-
-
 def test_toy_config_rejects_alpha_outside_unit_interval():
     with pytest.raises(ValueError, match="alpha"):
         toy_sim.ToyConfig(alpha=1.5)

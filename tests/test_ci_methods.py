@@ -11,7 +11,6 @@ ALPHA = 0.05
 Z = stats.norm.ppf(1 - ALPHA / 2)
 Z_CALIBRATED = stats.norm.ppf(1 - ALPHA / 4)
 P_END = 1 - ALPHA / 2  # per-end level of a Bonferroni joint CI
-GAMMA = 1 - 0.1 / np.log(2500)  # CLR's gamma_n at the toy's n_1 + n_2
 
 
 def _arrays(*rows):
@@ -111,8 +110,8 @@ def test_cross_fit_rejects_a_single_fold():
 # ----------------------------- clr_intersection_ci ------------------------------
 def test_clr_ci_at_an_exact_tie_uses_the_two_dataset_quantile():
     L, U, s2 = _arrays([[1.0, 1.0]], [[3.0, 3.0]], [[0.01, 0.01]])
-    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END, GAMMA)
-    # Both kept: k = Phi^{-1}(sqrt(p)), the p-quantile of a max of two N(0, 1).
+    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END)
+    # k = Phi^{-1}(sqrt(p)), the p-quantile of a max of two N(0, 1).
     k = stats.norm.ppf(np.sqrt(P_END))
     k_half = stats.norm.ppf(np.sqrt(0.5))
     np.testing.assert_allclose(ci.lo, [1.0 - k * 0.1])
@@ -121,12 +120,14 @@ def test_clr_ci_at_an_exact_tie_uses_the_two_dataset_quantile():
     np.testing.assert_allclose(ci.U_hat, [3.0 + k_half * 0.1])
 
 
-def test_clr_ci_drops_a_dataset_far_from_binding():
+def test_clr_ci_keeps_both_datasets_far_from_binding():
     L, U, s2 = _arrays([[1.0, -9.0]], [[3.0, 13.0]], [[0.01, 0.01]])
-    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END, GAMMA)
-    # One kept: k = Phi^{-1}(p), the single-dataset critical value.
-    np.testing.assert_allclose(ci.lo, [1.0 - Z * 0.1])
-    np.testing.assert_allclose(ci.hi, [3.0 + Z * 0.1])
+    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END)
+    # No selection: the two-dataset k is used even though dataset 2 is far
+    # from binding at both ends.
+    k = stats.norm.ppf(np.sqrt(P_END))
+    np.testing.assert_allclose(ci.lo, [1.0 - k * 0.1])
+    np.testing.assert_allclose(ci.hi, [3.0 + k * 0.1])
     np.testing.assert_array_equal(ci.w_L, [1.0])
     np.testing.assert_array_equal(ci.w_U, [1.0])
 
@@ -135,7 +136,7 @@ def test_clr_ci_corrects_before_taking_the_min():
     # Dataset 2 has the smaller raw upper estimate but a 10 times larger
     # s.e.; after correction dataset 1 attains the upper end.
     L, U, s2 = _arrays([[1.0, 1.0]], [[3.0, 2.95]], [[0.01, 1.0]])
-    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END, GAMMA)
+    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END)
     k = stats.norm.ppf(np.sqrt(P_END))
     np.testing.assert_allclose(ci.hi, [3.0 + k * 0.1])
     np.testing.assert_array_equal(ci.w_U, [1.0])
@@ -143,8 +144,8 @@ def test_clr_ci_corrects_before_taking_the_min():
 
 def test_clr_ci_lower_end_mirrors_upper_end():
     L, U, s2 = _random_bounds(np.random.default_rng(4))
-    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END, GAMMA)
-    flipped = ci_methods.clr_intersection_ci(-U, -L, s2, P_END, GAMMA)
+    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END)
+    flipped = ci_methods.clr_intersection_ci(-U, -L, s2, P_END)
     np.testing.assert_allclose(ci.lo, -flipped.hi)
     np.testing.assert_allclose(ci.L_hat, -flipped.U_hat)
     np.testing.assert_array_equal(ci.w_L, flipped.w_U)
@@ -152,9 +153,9 @@ def test_clr_ci_lower_end_mirrors_upper_end():
 
 def test_clr_ci_never_wider_than_calibrated_intersection():
     # Its end is a min over corrected bounds, so at most the corrected bound
-    # at the raw argmin, and k <= Phi^{-1}(sqrt(1 - alpha / 2)) < z_calibrated.
+    # at the raw argmin, and k = Phi^{-1}(sqrt(1 - alpha / 2)) < z_calibrated.
     L, U, s2 = _random_bounds(np.random.default_rng(5), n_reps=5000)
-    clr = ci_methods.clr_intersection_ci(L, U, s2, P_END, GAMMA)
+    clr = ci_methods.clr_intersection_ci(L, U, s2, P_END)
     calibrated = ci_methods.intersection_ci(L, U, s2, Z_CALIBRATED)
     assert np.all(clr.hi <= calibrated.hi)
     assert np.all(clr.lo >= calibrated.lo)
@@ -169,7 +170,7 @@ def test_clr_ci_per_end_coverage_at_a_tie_is_p():
     L = true_lo + se * rng.standard_normal((n_reps, 2))
     U = true_hi + se * rng.standard_normal((n_reps, 2))
     s2 = np.broadcast_to(se**2, (n_reps, 2))
-    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END, GAMMA)
+    ci = ci_methods.clr_intersection_ci(L, U, s2, P_END)
     mcse = np.sqrt(P_END * (1 - P_END) / n_reps)
     assert abs(np.mean(ci.lo <= true_lo) - P_END) <= 4 * mcse
     assert abs(np.mean(ci.hi >= true_hi) - P_END) <= 4 * mcse
@@ -178,65 +179,55 @@ def test_clr_ci_per_end_coverage_at_a_tie_is_p():
 def test_clr_ci_rejects_levels_outside_unit_interval():
     L, U, s2 = _arrays([[1.0, 1.0]], [[3.0, 3.0]], [[0.01, 0.01]])
     with pytest.raises(ValueError, match="p must"):
-        ci_methods.clr_intersection_ci(L, U, s2, 1.0, GAMMA)
-    with pytest.raises(ValueError, match="gamma must"):
-        ci_methods.clr_intersection_ci(L, U, s2, P_END, 0.0)
+        ci_methods.clr_intersection_ci(L, U, s2, 1.0)
 
 
 def test_clr_ci_leaves_inputs_unchanged():
     L, U, s2 = _random_bounds(np.random.default_rng(7))
     copies = [x.copy() for x in (L, U, s2)]
-    ci_methods.clr_intersection_ci(L, U, s2, P_END, GAMMA)
+    ci_methods.clr_intersection_ci(L, U, s2, P_END)
     for before, after in zip(copies, (L, U, s2)):
         np.testing.assert_array_equal(before, after)
 
 
-# ----------------------------- tube formula ------------------------------
+# ----------------------------- critical values ------------------------------
 def _quadrant_quantile(level):
-    """Root of Phi(k) - exp(-k^2 / 2) / 4 = level: all weights kept."""
+    """Root of Phi(k) - exp(-k^2 / 2) / 4 = level: the sup over all weights."""
     return optimize.brentq(
         lambda k: stats.norm.cdf(k) - np.exp(-k**2 / 2) / 4 - level, 0, 8
     )
 
 
-def test_tube_quantile_closed_form_cases():
-    one = np.array([1.0])
-    # A single direction: one N(0, 1).
-    np.testing.assert_allclose(
-        ci_methods._tube_quantile(P_END, 0 * one, 0 * one), [Z], rtol=1e-9)
-    # The two axes only (the two datasets): the max of two N(0, 1).
-    np.testing.assert_allclose(
-        ci_methods._tube_quantile(P_END, 0 * one, np.pi / 2 * one),
-        [stats.norm.ppf(np.sqrt(P_END))], rtol=1e-9)
-    # The whole quadrant (every weight).
-    np.testing.assert_allclose(
-        ci_methods._tube_quantile(P_END, np.pi / 2 * one, 0 * one),
-        [_quadrant_quantile(P_END)], rtol=1e-9)
+def test_critical_values_solve_their_cdf_equations():
+    for level in (0.5, P_END):
+        # The max of two independent N(0, 1): Phi(k)^2 = level.
+        k_two = ci_methods._max_of_two_quantile(level)
+        np.testing.assert_allclose(stats.norm.cdf(k_two) ** 2, level,
+                                   rtol=1e-12)
+        # The sup over every weight (the whole quadrant).
+        np.testing.assert_allclose(ci_methods._quadrant_sup_quantile(level),
+                                   _quadrant_quantile(level), rtol=1e-9)
 
 
-def test_tube_cdf_matches_monte_carlo():
-    # Kept directions: one arc [0, 0.6]; two arcs [0, 0.3] and [1.0, pi/2].
+def test_quadrant_sup_cdf_matches_monte_carlo():
+    # The sup over 400 unit vectors spanning the positive quadrant, by brute
+    # force, against the closed form; the last k is the p = 0.975 constant.
     rng = np.random.default_rng(8)
     Z = rng.standard_normal((20_000, 2))
-    cases = [(np.linspace(0, 0.6, 400), 0.6, 0.0),
-             (np.concatenate([np.linspace(0, 0.3, 200),
-                              np.linspace(1.0, np.pi / 2, 400)]),
-              0.3 + np.pi / 2 - 1.0, 0.7)]
-    for angles, arc, gap in cases:
-        sup = np.max(Z @ np.vstack([np.cos(angles), np.sin(angles)]), axis=1)
-        for k in (1.5, 2.0, 2.4):
-            exact = ci_methods._tube_cdf(np.array([k]), np.array([arc]),
-                                         np.array([gap]))[0]
-            mcse = np.sqrt(exact * (1 - exact) / Z.shape[0])
-            assert abs(np.mean(sup <= k) - exact) <= 4 * mcse
+    angles = np.linspace(0, np.pi / 2, 400)
+    sup = np.max(Z @ np.vstack([np.cos(angles), np.sin(angles)]), axis=1)
+    for k in (0.5, 1.5, ci_methods._quadrant_sup_quantile(P_END)):
+        exact = ci_methods._quadrant_sup_cdf(k)
+        mcse = np.sqrt(exact * (1 - exact) / Z.shape[0])
+        assert abs(np.mean(sup <= k) - exact) <= 4 * mcse
 
 
 # ----------------------------- clr_convex_ci ------------------------------
 def test_clr_convex_ci_at_an_exact_tie_averages_with_quadrant_quantile():
-    # Equal estimates and s.e.: every weight is kept, k is the quadrant
-    # quantile, and the smallest corrected bound is at w = 1/2.
+    # Equal estimates and s.e.: k is the quadrant quantile (no selection),
+    # and the smallest corrected bound is at w = 1/2.
     L, U, s2 = _arrays([[1.0, 1.0]], [[3.0, 3.0]], [[0.01, 0.01]])
-    ci = ci_methods.clr_convex_ci(L, U, s2, P_END, GAMMA)
+    ci = ci_methods.clr_convex_ci(L, U, s2, P_END)
     k = _quadrant_quantile(P_END)
     np.testing.assert_allclose(ci.hi, [3.0 + k * 0.1 / np.sqrt(2)],
                                rtol=1e-6)
@@ -247,10 +238,10 @@ def test_clr_convex_ci_at_an_exact_tie_averages_with_quadrant_quantile():
 
 
 def test_clr_convex_ci_never_above_corrected_single_datasets():
-    # The corners w = 0, 1 are in the family, and k is at most the quadrant
+    # The corners w = 0, 1 are in the family, and k is the quadrant
     # quantile, so each end is no worse than the corrected single datasets.
     L, U, s2 = _random_bounds(np.random.default_rng(9))
-    ci = ci_methods.clr_convex_ci(L, U, s2, P_END, GAMMA)
+    ci = ci_methods.clr_convex_ci(L, U, s2, P_END)
     k = _quadrant_quantile(P_END)
     se = np.sqrt(s2)
     assert np.all(ci.hi <= np.min(U + k * se, axis=1) + 1e-12)
@@ -261,8 +252,8 @@ def test_clr_convex_ci_never_above_corrected_single_datasets():
 
 def test_clr_convex_ci_lower_end_mirrors_upper_end():
     L, U, s2 = _random_bounds(np.random.default_rng(10))
-    ci = ci_methods.clr_convex_ci(L, U, s2, P_END, GAMMA)
-    flipped = ci_methods.clr_convex_ci(-U, -L, s2, P_END, GAMMA)
+    ci = ci_methods.clr_convex_ci(L, U, s2, P_END)
+    flipped = ci_methods.clr_convex_ci(-U, -L, s2, P_END)
     np.testing.assert_allclose(ci.lo, -flipped.hi)
     np.testing.assert_allclose(ci.L_hat, -flipped.U_hat)
     np.testing.assert_array_equal(ci.w_L, flipped.w_U)
@@ -276,7 +267,7 @@ def test_clr_convex_ci_per_end_coverage_at_a_tie_is_p():
     L = 1.0 + se * rng.standard_normal((n_reps, 2))
     U = 3.0 + se * rng.standard_normal((n_reps, 2))
     s2 = np.broadcast_to(se**2, (n_reps, 2))
-    ci = ci_methods.clr_convex_ci(L, U, s2, P_END, GAMMA,
+    ci = ci_methods.clr_convex_ci(L, U, s2, P_END,
                                   w_grid=np.linspace(0, 1, 201))
     mcse = np.sqrt(P_END * (1 - P_END) / n_reps)
     assert abs(np.mean(ci.lo <= 1.0) - P_END) <= 4 * mcse
@@ -286,17 +277,17 @@ def test_clr_convex_ci_per_end_coverage_at_a_tie_is_p():
 def test_clr_convex_ci_rejects_bad_inputs():
     L, U, s2 = _arrays([[1.0, 1.0]], [[3.0, 3.0]], [[0.01, 0.01]])
     with pytest.raises(ValueError, match="positive"):
-        ci_methods.clr_convex_ci(L, U, np.array([[0.01, 0.0]]), P_END, GAMMA)
+        ci_methods.clr_convex_ci(L, U, np.array([[0.01, 0.0]]), P_END)
     with pytest.raises(ValueError, match="p must"):
-        ci_methods.clr_convex_ci(L, U, s2, 0.0, GAMMA)
+        ci_methods.clr_convex_ci(L, U, s2, 0.0)
     with pytest.raises(ValueError, match="w_grid"):
-        ci_methods.clr_convex_ci(L, U, s2, P_END, GAMMA,
+        ci_methods.clr_convex_ci(L, U, s2, P_END,
                                  w_grid=np.array([0.0, 0.3, 1.0]))
 
 
 def test_clr_convex_ci_leaves_inputs_unchanged():
     L, U, s2 = _random_bounds(np.random.default_rng(12))
     copies = [x.copy() for x in (L, U, s2)]
-    ci_methods.clr_convex_ci(L, U, s2, P_END, GAMMA)
+    ci_methods.clr_convex_ci(L, U, s2, P_END)
     for before, after in zip(copies, (L, U, s2)):
         np.testing.assert_array_equal(before, after)

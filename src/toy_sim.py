@@ -12,7 +12,8 @@ the split method's loss of evaluation data. The CLR intersection CI
 (Chernozhukov, Lee and Rosen, 2013) corrects each bound before taking the
 max or min; it is compared with the split and cross-fitted convex CIs and
 with M9, CLR over every convex combination of the two bounds (a convex CI
-without a sample split).
+without a sample split). M8 and M9 omit CLR's adaptive inequality selection
+step, so their critical values are fixed.
 
 Usage, from the repo root:
     python -m src.toy_sim [--seed 7] [--reps 5000] [--frac-a 0.3] [--no-plots]
@@ -22,7 +23,8 @@ Plans: quality_reports/plans/done/2026-10-09_band-toy-simulation.md,
        quality_reports/plans/done/2026-10-27_calibrated-intersection.md,
        quality_reports/plans/done/2026-11-03_toy-cross-fit.md,
        quality_reports/plans/done/2026-11-05_toy-clr.md,
-       quality_reports/plans/done/2026-11-05_toy-convex-clr.md
+       quality_reports/plans/done/2026-11-05_toy-convex-clr.md,
+       quality_reports/plans/done/2026-11-06_clr-no-selection.md
 Outputs: src/outputs/toy_sim/
 """
 
@@ -111,11 +113,6 @@ class ToyConfig:
     def z_calibrated(self) -> float:
         """Bonferroni over the 4 one-sided (dataset, end) events."""
         return stats.norm.ppf(1 - self.alpha / 4)
-
-    @property
-    def clr_gamma(self) -> float:
-        """CLR's selection level 1 - 0.1 / log(n), with n = n_1 + n_2."""
-        return 1 - 0.1 / np.log(sum(self.n))
 
     @property
     def true_lo(self) -> float:
@@ -272,10 +269,10 @@ def ci_by_method(
             full.L, full.U, full.s2, cfg.z_calibrated
         ),
         M8: ci_methods.clr_intersection_ci(
-            full.L, full.U, full.s2, 1 - cfg.alpha / 2, cfg.clr_gamma
+            full.L, full.U, full.s2, 1 - cfg.alpha / 2
         ),
         M9: ci_methods.clr_convex_ci(
-            full.L, full.U, full.s2, 1 - cfg.alpha / 2, cfg.clr_gamma
+            full.L, full.U, full.s2, 1 - cfg.alpha / 2
         ),
     }
     for method, n_folds in CROSS_FIT_FOLDS.items():
@@ -470,10 +467,10 @@ def _check_joint_coverage(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
 def _check_clr_tie_coverage(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
     """M8 and M9 per-end coverage at a tie with r = 1 vs 1 - alpha / 2.
 
-    At a tie nothing is dropped by selection, so each end covers with
-    probability 1 - alpha / 2: for M8, Phi(k)^2 with
-    k = Phi^{-1}(sqrt(1 - alpha / 2)); for M9, the tube formula over all
-    weights.
+    At a tie every bound binds, so the fixed critical value is exact and
+    each end covers with probability 1 - alpha / 2: for M8, Phi(k)^2 with
+    k = Phi^{-1}(sqrt(1 - alpha / 2)); for M9, the closed form for the sup
+    over all weights.
     """
     nominal = 1 - cfg.alpha / 2
     checks = []
