@@ -16,6 +16,10 @@ Outputs, beside the summary (or in --out-dir):
     width_ratio_stats_<outcome><suffix>.csv  per method: selected cells,
         valid cells, and the median, 90th percentile and maximum ratio over
         the valid ones
+    width_ratio_<outcome><suffix>_macros.tex  caption macros: the number of
+        selected cells, \\causal<Outcome>RatioCells, and each method's
+        percentage of them where it is valid, e.g.
+        \\causalBinaryRatioValidLargeOS
 """
 
 import argparse
@@ -29,6 +33,7 @@ from scipy import stats
 from src.helpers import mc_metrics
 from src.latex import toy_sim_slide_figs
 from src.plotting import causal_sim_plots
+from src.plotting import toy_sim_plots
 
 # Method names in summary_full.csv (R/causal_sim_quick.R) -> figure labels,
 # top to bottom.
@@ -42,6 +47,25 @@ METHOD_LABELS = {
     "convex (split)": "convex, split",
     "convex (cross-fit)": "convex, cross-fit",
     "convex (CLR)": "convex, CLR",
+}
+# Colour of each method, fixed so that it is the same in every panel: the
+# six validated slots of toy_sim_plots.PALETTE, in order, for the methods
+# the paper shows; the small OS (hidden there) is neutral grey.
+METHOD_COLOURS = {
+    DATASET_1: toy_sim_plots.PALETTE[0],
+    DATASET_2: toy_sim_plots.GREY_LINE,
+    "intersection (calibrated)": toy_sim_plots.PALETTE[1],
+    "intersection (CLR)": toy_sim_plots.PALETTE[2],
+    "convex (split)": toy_sim_plots.PALETTE[3],
+    "convex (cross-fit)": toy_sim_plots.PALETTE[4],
+    "convex (CLR)": toy_sim_plots.PALETTE[5],
+}
+# Caption-macro name of each method (letters only, as LaTeX requires).
+METHOD_MACROS = {
+    DATASET_1: "LargeOS", DATASET_2: "SmallOS",
+    "intersection (calibrated)": "Calibrated",
+    "intersection (CLR)": "Clr", "convex (split)": "Split",
+    "convex (cross-fit)": "CrossFit", "convex (CLR)": "ConvexClr",
 }
 # CLI name -> method name, for --hide.
 CLI_NAMES = {"dataset1": DATASET_1, "dataset2": DATASET_2,
@@ -125,19 +149,27 @@ def ratio_stats(ratios: pd.DataFrame, methods: Sequence[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def panel_title(
-    outcome: str, cells: pd.DataFrame, max_gap_se: float | None
-) -> str:
-    """Outcome, the selected Lambda ranges or gap, and the number of cells."""
-    n_cells = len(cells.groupby(list(CELL_COLUMNS)))
-    title = (f"{outcome.capitalize()} outcome: "
-             rf"$\Lambda_1 \in [{cells.lambda_1.min():g}, "
-             rf"{cells.lambda_1.max():g}]$, "
-             rf"$\Lambda_2 \in [{cells.lambda_2.min():g}, "
-             rf"{cells.lambda_2.max():g}]$")
-    if max_gap_se is not None:
-        title += f", gap $\\leq$ {max_gap_se:g} s.e."
-    return f"{title}, {n_cells} cells"
+def panel_title(outcome: str, cells: pd.DataFrame) -> str:
+    """The outcome and the ranges of Lambda_1 and Lambda_2 of the cells."""
+    return (f"{outcome.capitalize()} outcome: "
+            rf"$\Lambda_1 \in [{cells.lambda_1.min():g}, "
+            rf"{cells.lambda_1.max():g}]$, "
+            rf"$\Lambda_2 \in [{cells.lambda_2.min():g}, "
+            rf"{cells.lambda_2.max():g}]$")
+
+
+def caption_macros(stats_table: pd.DataFrame, outcome: str) -> str:
+    """LaTeX \\def lines: number of cells and each method's valid percentage.
+
+    Defined with \\def, so inputting the file twice does not raise an error.
+    """
+    prefix = f"causal{outcome.capitalize()}Ratio"
+    lines = [rf"\def\{prefix}Cells{{{int(stats_table.cells.iloc[0])}}}"]
+    for row in stats_table.itertuples():
+        percent = 100 * row.valid_cells / row.cells
+        name = METHOD_MACROS[row.method]
+        lines.append(rf"\def\{prefix}Valid{name}{{{percent:.0f}}}")
+    return "\n".join(lines) + "\n"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -190,20 +222,24 @@ def main() -> None:
     hidden = {CLI_NAMES[name] for name in args.hide}
     shown = [m for m in methods if m not in hidden]
     causal_sim_plots.plot_width_ratio_boxes(
-        ratios, shown, [METHOD_LABELS[m] for m in shown],
-        panel_title(args.outcome, df, args.max_gap_se), fig_path,
-        log_x=args.log_x)
-    stats = ratio_stats(ratios, methods)
+        ratios, shown, [METHOD_LABELS[m] for m in shown], METHOD_COLOURS,
+        panel_title(args.outcome, df), fig_path, log_x=args.log_x)
+    ratio_table = ratio_stats(ratios, methods)
     stats_path = out_dir / f"width_ratio_stats_{stem}.csv"
-    stats.to_csv(stats_path, index=False)
-    print(stats.round(3).to_string(index=False))
+    ratio_table.to_csv(stats_path, index=False)
+    macros_path = out_dir / f"width_ratio_{stem}_macros.tex"
+    macros_path.write_text(
+        "% Written by python -m src.latex.causal_sim_paper_figs from "
+        f"{args.summary.name}\n" + caption_macros(ratio_table, args.outcome))
+    print(ratio_table.round(3).to_string(index=False))
     # A hidden method that is never the narrowest valid CI leaves every
     # shown ratio unchanged, so a caption need not mention it.
     for method in sorted(hidden):
         best = int((ratios[ratios.method == method].ratio == 1).sum())
         print(f"Hidden method {method!r} is the narrowest valid CI in {best} "
               f"cells" + ("" if best == 0 else "; the caption must say so"))
-    print(f"Written to {fig_path}\nWritten to {stats_path}")
+    print(f"Written to {fig_path}\nWritten to {stats_path}\n"
+          f"Written to {macros_path}")
 
 
 if __name__ == "__main__":

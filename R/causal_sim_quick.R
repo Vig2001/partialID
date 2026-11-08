@@ -22,7 +22,7 @@
 #     [--outcomes binary|continuous] [--lambdas-1 ...] [--lambdas-2 ...]
 #     [--workers W] [--backend multicore] [--out-dir ...] [--summarise-only]
 #
-# Plan:    quality_reports/plans/2026-11-07_causal-sim-quick.md
+# Plan:    quality_reports/plans/done/2026-11-07_causal-sim-quick.md
 # Notes:   partialID_Overleaf/Notes/Simulation_Notes/causal_sim_quick_explained.tex
 # Outputs: src/outputs/causal_sim_quick/ by default (as R/causal_sim.R)
 # TODO: after the CLeaR deadline, move the parts shared with causal_sim.R

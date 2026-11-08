@@ -2,7 +2,7 @@
 
 Date: 2026-11-07.
 
-Status: enacted 2026-11-08. Both 1000-replicate runs are done, with tables, box plots (all cells, and near ties with `--max-gap-se 1`) and the notes. 2026-11-08: the user chose the near-tie cells (`--max-gap-se 1`) with dataset 2 hidden and dataset 1 labelled "large OS". The figures are made; this plan moves to `done/` once they are in the paper.
+Status: enacted 2026-11-08. Both 1000-replicate runs are done, with tables, box plots (all cells, and near ties with `--max-gap-se 1`) and the notes. 2026-11-08: the user chose the near-tie cells (`--max-gap-se 1`) with dataset 2 hidden and dataset 1 labelled "large OS". The figures are made; they are in the paper as Figure `fig:causal-width-ratio` (moved to `done/` the same day).
 
 Approved 2026-11-08 with these changes from the user:
 
