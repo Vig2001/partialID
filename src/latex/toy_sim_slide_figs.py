@@ -5,14 +5,15 @@ Does not rerun the simulation: run `python -m src.toy_sim` first.
 Usage, from the repo root:
     python -m src.latex.toy_sim_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
         [--table-ratios 1 2 5] [--with-calibrated | --by-dataset | --clr]
-        [--with-mcse] [--metric ci|band|ends]
+        [--with-oracle] [--with-mcse] [--metric ci|band|ends]
 Outputs, in src/outputs/toy_sim/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, naive intersection vs split
     width_coverage_small_gaps.tex       table rows for the width slide, or
     width_coverage_small_gaps_calibrated.tex  with an M6 column after M1, or
     width_coverage_datasets_r<ratios>.tex  paper columns: the most precise
         dataset (dataset 1), M6, M3, M7, M8, M9, for the ratios given (e.g.
-        _r1-2-3), or
+        _r1-2-3); with --with-oracle, an M2 (oracle) column is added last
+        and the name ends _oracle, or
     width_coverage_clr_r<ratios>.tex  columns M3, M7, M8 (CLR);
     each name gets an _mcse suffix with --with-mcse (MC s.e. of each width
     on a second line in the cell). With --metric band the cells are mean
@@ -48,6 +49,8 @@ TABLE_METHODS_BY_DATASET = (
     toy_sim.M5_D1, toy_sim.M6, toy_sim.M3, toy_sim.M7, toy_sim.M8,
     toy_sim.M9,
 )
+# Paper CI-width table: as above, with the oracle convex CI as a benchmark.
+TABLE_METHODS_BY_DATASET_ORACLE = TABLE_METHODS_BY_DATASET + (toy_sim.M2,)
 # Paper table: the valid convex CIs against the CLR intersection bounds.
 TABLE_METHODS_CLR = (toy_sim.M3, toy_sim.M7, toy_sim.M8)
 # Caption macros: name -> results.csv column of MC s.e.; each name gives
@@ -231,6 +234,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                          help="Columns M3, M7, M8 (CLR), written to "
                               "width_coverage_clr_r<ratios>.tex; caption "
                               "macros start \\toyClr.")
+    parser.add_argument("--with-oracle", action="store_true",
+                        help="With --by-dataset only: add the oracle convex "
+                             "CI (M2) as the last column, written to a "
+                             "separate _oracle table.")
     parser.add_argument("--with-mcse", action="store_true",
                         help="Add each mean width's Monte Carlo standard "
                              "error on a second line in its cell, written to "
@@ -243,7 +250,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "cells per method).")
     parser.add_argument("--out-dir", type=Path, default=None,
                         help="Output directory; defaults to the results' one.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.with_oracle and not args.by_dataset:
+        parser.error("--with-oracle requires --by-dataset")
+    return args
 
 
 def main() -> None:
@@ -260,7 +270,10 @@ def main() -> None:
     plot_joint_coverage(df, args.ratio, cfg, fig_path)
     ratios = "-".join(f"{r:g}" for r in args.table_ratios)
     macro_prefix = MACRO_PREFIX_CLR if args.clr else MACRO_PREFIX
-    if args.by_dataset:
+    if args.by_dataset and args.with_oracle:
+        methods = TABLE_METHODS_BY_DATASET_ORACLE
+        table_name = f"datasets_r{ratios}_oracle"
+    elif args.by_dataset:
         methods, table_name = TABLE_METHODS_BY_DATASET, f"datasets_r{ratios}"
     elif args.clr:
         methods, table_name = TABLE_METHODS_CLR, f"clr_r{ratios}"
