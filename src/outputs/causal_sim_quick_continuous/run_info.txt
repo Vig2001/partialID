@@ -1,0 +1,17 @@
+date: 2026-11-08 01:05
+git: 7f37ba8-dirty
+DGK commit: 26cbbf6e90dcd0648c837c0d58568375291dd522 (dvds.binary(), unmodified)
+nuisances: parametric, true functional forms (R/helpers/dvds_lean.R), out of fold with 5 folds
+command: Rscript R/causal_sim_quick.R --reps 1000 --n1 3000 --n2 500 --noise-scale-2 2.5 --outcomes continuous --lambdas-1 3:5:0.05 --lambdas-2 1:3:0.05 --workers 9 --out-dir src/outputs/causal_sim_quick_continuous
+seed: 1 | reps: 1000 | n: 3000, 500 | frac_a: 0.3 | folds: 5 | alpha: 0.05
+outcomes: continuous
+lambdas study 1: 3, 3.05, 3.1, 3.15, 3.2, 3.25, 3.3, 3.35, 3.4, 3.45, 3.5, 3.55, 3.6, 3.65, 3.7, 3.75, 3.8, 3.85, 3.9, 3.95, 4, 4.05, 4.1, 4.15, 4.2, 4.25, 4.3, 4.35, 4.4, 4.45, 4.5, 4.55, 4.6, 4.65, 4.7, 4.75, 4.8, 4.85, 4.9, 4.95, 5
+lambdas study 2: 1, 1.05, 1.1, 1.15, 1.2, 1.25, 1.3, 1.35, 1.4, 1.45, 1.5, 1.55, 1.6, 1.65, 1.7, 1.75, 1.8, 1.85, 1.9, 1.95, 2, 2.05, 2.1, 2.15, 2.2, 2.25, 2.3, 2.35, 2.4, 2.45, 2.5, 2.55, 2.6, 2.65, 2.7, 2.75, 2.8, 2.85, 2.9, 2.95, 3
+noise scale (continuous outcome): study 1 1, study 2 2.5
+binary denominator k: study 1 1, study 2 1
+backend: multisession | workers: 9
+fitting run time: 3 h 57 min 5 s
+summary run time: 1 h 31 min 4 s
+R version 4.6.1 (2026-06-24)
+future 1.80.0 | future.apply 1.21.0 | progressr 1.1.0 | optparse 1.8.2
+note: the run times above include system sleep (Mac on battery overnight); 45 replicates kept awake with caffeinate took 14-18 s to fit and 9 s to summarise, so 1000 replicates take about 5-10 min

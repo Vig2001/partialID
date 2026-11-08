@@ -1,6 +1,27 @@
 # Plan: `R/causal_sim_quick.R`, the causal simulation with lean nuisances and every method
 
-Date: 2026-11-07. Status: awaiting approval. No earlier plan was saved for this. The idea appears only as the "parametric-nuisance option" in `done/2026-11-02_dgk-exact-replication.md` and the session logs.
+Date: 2026-11-07.
+
+Status: enacted 2026-11-08. Both 1000-replicate runs are done, with tables, box plots (all cells, and near ties with `--max-gap-se 1`) and the notes. 2026-11-08: the user chose the near-tie cells (`--max-gap-se 1`) with dataset 2 hidden and dataset 1 labelled "large OS". The figures are made; this plan moves to `done/` once they are in the paper.
+
+Approved 2026-11-08 with these changes from the user:
+
+- **Methods:** the valid methods plus cross-fitting only: each dataset alone, M6, M3, M7, M8, M9. M1 (naive intersection) and M4 (no split) are dropped, since both undercover.
+- **Designs:** the paper's two, at n = (3000, 500), each its own run:
+  - continuous, with study 2's noise scaled by c = 2.5, Lambda_1 3:5:0.05, Lambda_2 1:3:0.05;
+  - binary, with study 1's rare outcome k = 15, Lambda_1 1:4:0.05, Lambda_2 1:2:0.05.
+- **Output:**
+  - a box plot, per outcome, of each method's CI width over the narrowest valid CI width in the same (Lambda_1, Lambda_2) cell;
+  - a best-row table as before, with the new methods as extra columns;
+  - then a recommendation of which cells to plot.
+- **Notes:** an explanation file in `partialID_Overleaf/Notes/Simulation_Notes/`.
+- **The cross-fit variant:** complement fits (as in the toy), since lean fits are cheap.
+- **Deferred:** `--nuisance-features linear`; it isn't needed for the box plots.
+- **Change found during the build:** nuisances are predicted out of fold within each fit (`--nuisance-folds`, default 5), as DGK's forests predict out of bag.
+  - In-sample fits biased both bounds inwards by O(p / n), so the single studies undercovered and the cross-fitted CI undercovered in most continuous cells, since its held-out fits have only n / 5 units.
+  - The in-sample runs are kept in `src/outputs/causal_sim_quick_*_insample/`.
+
+No earlier plan was saved for this. The idea appears only as the "parametric-nuisance option" in `done/2026-11-02_dgk-exact-replication.md` and the session logs.
 
 ## Why
 

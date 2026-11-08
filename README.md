@@ -114,6 +114,16 @@ The rare-outcome design of `quality_reports/plans/done/2026-11-05_binary-rare-ou
 caffeinate -is Rscript R/causal_sim.R --reps 1000 --n1 3000 --n2 500 --binary-denominator-1 15 --outcomes binary --lambdas-1 1:4:0.05 --lambdas-2 1:2:0.05 --workers 9 --out-dir src/outputs/causal_sim_binary_k15
 ```
 
+**Lean version.** `R/causal_sim_quick.R` runs the same design with parametric nuisances on the true functional forms (`R/helpers/dvds_lean.R`, predicted out of fold within each fit). It adds the cross-fitted convex CI and both CLR CIs, and takes about 4 min per design for 1000 replicates on 9 workers. The two paper designs:
+
+```
+Rscript R/causal_sim_quick.R --reps 1000 --n1 3000 --n2 500 --noise-scale-2 2.5 --outcomes continuous --lambdas-1 3:5:0.05 --lambdas-2 1:3:0.05 --workers 9 --out-dir src/outputs/causal_sim_quick_continuous
+Rscript R/causal_sim_quick.R --reps 1000 --n1 3000 --n2 500 --binary-denominator-1 15 --outcomes binary --lambdas-1 1:4:0.05 --lambdas-2 1:2:0.05 --workers 9 --out-dir src/outputs/causal_sim_quick_binary_k15
+python -m src.latex.causal_sim_paper_figs --summary src/outputs/causal_sim_quick_continuous/summary_full.csv --outcome continuous  # width / best valid width, box per method
+```
+
+Explained in `partialID_Overleaf/Notes/Simulation_Notes/causal_sim_quick_explained.tex`.
+
 Replicates run in parallel (default: available cores minus 1; one grf thread per worker); results do not depend on the number of workers. The default Λ grid (both studies) is DGK's, `seq(1, 3, length.out = 20)`; `--lambdas-1` and `--lambdas-2` take comma-separated values or `from:to:by`. On a 10-core M4, 1000 replicates take about 105 min (both outcomes); the total run time is printed at the end and recorded in `run_info.txt`.
 
 Outputs, in `src/outputs/causal_sim/` (or `--out-dir`):

@@ -11,7 +11,8 @@ convex split).
 Usage, from the repo root:
     python -m src.latex.causal_sim_tables [--summary <summary_full.csv>]
         [--outcome continuous] [--lambdas-1 3 3.5 4 4.5 5] [--top 3]
-        [--metric ci|band] [--methods dataset1 dataset2 intersection split]
+        [--metric ci|band] [--methods dataset1 dataset2 intersection split
+        crossfit clr convexclr] (default: the first four)
         [--macro-decimals 3] [--alpha 0.05]
 Outputs, beside the summary:
     width_coverage_best_<outcome>.tex  rows: Lambda_1, Lambda_2, then
@@ -41,9 +42,15 @@ DATASET_1 = "dataset 1"
 DATASET_2 = "dataset 2"
 INTERSECTION = "intersection (calibrated)"
 CONVEX_SPLIT = "convex (split)"
-# CLI name -> method name in summary_full.csv, in default column order.
+# CLI name -> method name in summary_full.csv. The last three exist only in
+# runs of R/causal_sim_quick.R.
 METHOD_NAMES = {"dataset1": DATASET_1, "dataset2": DATASET_2,
-                "intersection": INTERSECTION, "split": CONVEX_SPLIT}
+                "intersection": INTERSECTION, "split": CONVEX_SPLIT,
+                "crossfit": "convex (cross-fit)",
+                "clr": "intersection (CLR)",
+                "convexclr": "convex (CLR)"}
+# Default columns: the methods of R/causal_sim.R.
+DEFAULT_METHODS = ["dataset1", "dataset2", "intersection", "split"]
 # Caption macros: name after \causal<Outcome> -> column of MC s.e.
 CAPTION_MACROS = {
     "ci": {"WidthMcse": "width_mcse", "CovMcse": "cov_joint_mcse"},
@@ -179,8 +186,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="Table cells: 'ci' for width (coverage), 'band' "
                              "for the mean estimated band width.")
     parser.add_argument("--methods", nargs="+", choices=tuple(METHOD_NAMES),
-                        default=list(METHOD_NAMES),
-                        help="Method columns, in this order.")
+                        default=DEFAULT_METHODS,
+                        help="Method columns, in this order; crossfit, clr "
+                             "and convexclr need a R/causal_sim_quick.R run.")
     parser.add_argument("--macro-decimals", type=int, default=3,
                         help="Decimal places of the MC s.e. caption macros.")
     parser.add_argument("--alpha", type=float, default=0.05,

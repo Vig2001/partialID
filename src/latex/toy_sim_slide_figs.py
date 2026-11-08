@@ -5,7 +5,7 @@ Does not rerun the simulation: run `python -m src.toy_sim` first.
 Usage, from the repo root:
     python -m src.latex.toy_sim_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
         [--table-ratios 1 2 5] [--with-calibrated | --by-dataset | --clr]
-        [--with-mcse] [--metric ci|band]
+        [--with-mcse] [--metric ci|band|ends]
 Outputs, in src/outputs/toy_sim/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, naive intersection vs split
     width_coverage_small_gaps.tex       table rows for the width slide, or
@@ -17,10 +17,14 @@ Outputs, in src/outputs/toy_sim/:
     each name gets an _mcse suffix with --with-mcse (MC s.e. of each width
     on a second line in the cell). With --metric band the cells are mean
     estimated band widths U_hat - L_hat and the name starts band_width_
-    instead of width_coverage_.
+    instead of width_coverage_. With --metric ends each method has two
+    cells, the mean estimated ends L_hat and U_hat, and the name starts
+    band_ends_; an end inside the true band by more than UNDERCOVER_SES
+    MC s.e. is wrapped in \\inward{}, which the paper must define.
     <table>_macros.tex                 median, min and max MC s.e. in the
         table, as LaTeX macros for the caption: \\toyWidthMcse{Median,Min,Max}
-        and \\toyCovMcse{...} (ci) or \\toyBandMcse{...} (band); with --clr
+        and \\toyCovMcse{...} (ci), \\toyBandMcse{...} (band), or
+        \\toyLowerEndMcse{...} and \\toyUpperEndMcse{...} (ends); with --clr
         the names start \\toyClr instead of \\toy, so both sets can be
         input in one document
 """
@@ -52,6 +56,11 @@ TABLE_METHODS_CLR = (toy_sim.M3, toy_sim.M7, toy_sim.M8)
 CAPTION_MACROS = {
     "ci": {"WidthMcse": "width_mcse", "CovMcse": "cov_joint_mcse"},
     "band": {"BandMcse": "band_width_mcse"},
+    "ends": {"LowerEndMcse": "bias_L_mcse", "UpperEndMcse": "bias_U_mcse"},
+}
+# Output name prefix for each table metric.
+TABLE_PREFIXES = {
+    "ci": "width_coverage", "band": "band_width", "ends": "band_ends"
 }
 MACRO_PREFIX = "toy"
 MACRO_PREFIX_CLR = "toyClr"
@@ -103,6 +112,27 @@ def band_cell(row: pd.Series) -> str:
     return f"{row.band_width:.3f}"
 
 
+def ends_cells(row: pd.Series, cfg: toy_sim.ToyConfig) -> list[str]:
+    """Mean estimated band ends L_hat and U_hat, as two cells.
+
+    The means are recovered from the bias against the true band,
+    L_hat = true_lo + bias_L and U_hat = true_hi + bias_U. An end lying
+    inside the true band (L_hat above true_lo, U_hat below true_hi) by more
+    than UNDERCOVER_SES Monte Carlo standard errors is wrapped in \\inward{}.
+    """
+    ends = (
+        (cfg.true_lo + row.bias_L, row.bias_L, row.bias_L_mcse),
+        (cfg.true_hi + row.bias_U, -row.bias_U, row.bias_U_mcse),
+    )
+    cells = []
+    for value, inward_shift, mcse in ends:
+        cell = f"{value:.3f}"
+        if inward_shift > UNDERCOVER_SES * mcse:
+            cell = rf"\inward{{{cell}}}"
+        cells.append(cell)
+    return cells
+
+
 def table_subset(
     df: pd.DataFrame,
     gaps: Sequence[float],
@@ -148,7 +178,9 @@ def width_table_rows(
     width (coverage); the slide must define \\undercov, \\splitcol and
     \\plugincol (one argument each), and with with_mcse each width is
     followed by its Monte Carlo standard error. With metric "band" a cell
-    is the mean estimated band width.
+    is the mean estimated band width; with metric "ends" each method has
+    two cells, L_hat and U_hat (see ends_cells), and the paper must define
+    \\inward.
     """
     nominal = 1 - cfg.alpha
     lines = []
@@ -162,6 +194,9 @@ def width_table_rows(
                 result = cells[cells.method == method].iloc[0]
                 if metric == "band":
                     row.append(band_cell(result))
+                    continue
+                if metric == "ends":
+                    row.extend(ends_cells(result, cfg))
                     continue
                 macro = TABLE_CELL_MACROS.get(method, "")
                 cell = table_cell(result, nominal, with_mcse)
@@ -200,9 +235,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="Add each mean width's Monte Carlo standard "
                              "error on a second line in its cell, written to "
                              "a separate _mcse table.")
-    parser.add_argument("--metric", choices=("ci", "band"), default="ci",
+    parser.add_argument("--metric", choices=tuple(TABLE_PREFIXES),
+                        default="ci",
                         help="Table cells: 'ci' for width (coverage), 'band' "
-                             "for the mean estimated band width.")
+                             "for the mean estimated band width, 'ends' for "
+                             "the mean estimated ends L_hat and U_hat (two "
+                             "cells per method).")
     parser.add_argument("--out-dir", type=Path, default=None,
                         help="Output directory; defaults to the results' one.")
     return parser.parse_args(argv)
@@ -233,8 +271,7 @@ def main() -> None:
         methods, table_name = TABLE_METHODS, "small_gaps"
     if args.with_mcse and args.metric == "ci":
         table_name += "_mcse"
-    prefix = "band_width" if args.metric == "band" else "width_coverage"
-    table_path = out_dir / f"{prefix}_{table_name}.tex"
+    table_path = out_dir / f"{TABLE_PREFIXES[args.metric]}_{table_name}.tex"
     header = "% Written by python -m src.latex.toy_sim_slide_figs from results.csv\n"
     table_path.write_text(
         header + width_table_rows(df, args.table_gaps, args.table_ratios, cfg,

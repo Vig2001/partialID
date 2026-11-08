@@ -63,7 +63,13 @@ THETA <- 0  # True ATE: neither outcome depends on Z in the DGK DGP.
 
 
 # ----------------------------- configuration ------------------------------
-parse_args <- function(argv = commandArgs(trailingOnly = TRUE)) {
+#' @param extra_options optparse options appended by scripts that reuse this
+#'   one (R/causal_sim_quick.R).
+#' @param default_out_dir Default of --out-dir.
+parse_args <- function(argv = commandArgs(trailingOnly = TRUE),
+                       extra_options = list(),
+                       default_out_dir = file.path("src", "outputs",
+                                                   "causal_sim")) {
   opt <- function(...) optparse::make_option(...)
   options <- list(
     opt("--seed", type = "integer", default = 1,
@@ -106,14 +112,14 @@ parse_args <- function(argv = commandArgs(trailingOnly = TRUE)) {
         help = paste("future backend: multisession, multicore or sequential",
                      "[default %default].")),
     opt("--out-dir", dest = "out_dir", type = "character",
-        default = file.path("src", "outputs", "causal_sim"),
+        default = default_out_dir,
         help = "Output directory [default %default]."),
     opt("--summarise-only", dest = "summarise_only", action = "store_true",
         default = FALSE,
         help = "Recompute CIs and summaries from estimates.csv; no fitting.")
   )
-  optparse::parse_args(optparse::OptionParser(option_list = options),
-                       args = argv)
+  parser <- optparse::OptionParser(option_list = c(options, extra_options))
+  optparse::parse_args(parser, args = argv)
 }
 
 
@@ -283,12 +289,13 @@ run_simulation <- function(cfg) {
 #' [replicate, lambda_index] per study (the studies' grids may differ).
 #'
 #' @param estimates Rows of estimates.csv for a single outcome.
+#' @param fits Names of the fits to arrange.
 #' @return Nested list: arrays[[fit]][[column]][[study]].
-bound_arrays <- function(estimates) {
+bound_arrays <- function(estimates, fits = FITS) {
   reps <- sort(unique(estimates$rep))
   columns <- c("lower", "upper", "s2_lower", "s2_upper", "n")
   arrays <- list()
-  for (fit in FITS) {
+  for (fit in fits) {
     arrays[[fit]] <- lapply(setNames(columns, columns), function(column) {
       lapply(1:2, function(k) {
         sub <- estimates[estimates$fit == fit & estimates$study == k, ]
