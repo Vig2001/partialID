@@ -122,7 +122,7 @@ Rscript R/causal_sim_quick.R --reps 1000 --n1 3000 --n2 500 --binary-denominator
 python -m src.latex.causal_sim_paper_figs --summary src/outputs/causal_sim_quick_continuous/summary_full.csv --outcome continuous  # width / best valid width, box per method
 ```
 
-`--nuisances forest` runs the same comparison with DGK's forests, binary outcome only; its full, fold A and fold B fits equal `R/causal_sim.R`'s, and the cross-fitted CI uses forests fitted on each fold's complement (`--cross-fit-bounds complement`). About 3–4 h for 1000 replicates on 9 workers; parallel workers need the real core count, so run it outside Claude's sandbox:
+`--nuisances forest` runs the same comparison with DGK's forests, binary outcome only; its full, fold A and fold B fits equal `R/causal_sim.R`'s, and, as in the lean mode, the cross-fitted CI uses standard cross-fitting (nuisances fitted on each fold's complement predict the fold). About 3–4 h for 1000 replicates on 9 workers; parallel workers need the real core count, so run it outside Claude's sandbox:
 
 ```
 caffeinate -is Rscript R/causal_sim_quick.R --nuisances forest --reps 1000 --n1 3000 --n2 500 --binary-denominator-1 15 --outcomes binary --lambdas-1 1:4:0.05 --lambdas-2 1:2:0.05 --workers 9 --out-dir src/outputs/causal_sim_forest_binary_k15

@@ -5,33 +5,31 @@
 #   dataset 1, dataset 2        each study alone (full-sample fits)
 #   intersection (calibrated)   full-sample fits, z = Phi^{-1}(1 - alpha/4)
 #   convex (split)              weights from fold A, CI from fold B
-#   convex (cross-fit)          K folds per study; fold f's weights come from
-#                               a fit on the other K - 1 folds (variances
-#                               scaled to the full n), its bounds from a fit
-#                               on fold f; the fold bounds are averaged
+#   convex (cross-fit)          K folds per study, standard cross-fitting:
+#                               for each fold f, nuisance models fitted on
+#                               the other K - 1 folds give the weights (from
+#                               the complement's own bounds, variances
+#                               scaled to the full n) and predict fold f's
+#                               nuisances, for fold f's bounds; the fold
+#                               bounds are averaged
 #   intersection (CLR)          CLR intersection bounds, every bound kept
 #   convex (CLR)                CLR over all convex combinations, no split
 # M8 and M9 use level p = 1 - alpha/2 at each end, as in src/toy_sim.py.
-# Fits per study and replicate: full, fold A, fold B, then for each fold f
-# of the K the held-out fold and its complement (3 + 2K in all).
+# Fits per study and replicate: full, fold A and fold B of both studies
+# first, then for each fold f of the K one fit on its complement, which also
+# predicts for fold f (3 + K in all). Drawing the cross-fitting folds last
+# keeps the other methods' fits unchanged when K changes.
 #
 # --nuisances forest (binary outcome only) uses DGK's forests instead, as
-# R/causal_sim.R does. Full, fold A and fold B of both studies are fitted
-# first, in R/causal_sim.R's order, so they equal that script's fits for the
-# same seed and settings. M7 then needs, for each fold f, weights and bounds:
-#   --cross-fit-bounds complement   (default with forests) forests fitted on
-#                                   the complement give its weights (out of
-#                                   bag) and predict fold f's nuisances, for
-#                                   fold f's bounds (K fits per study)
-#   --cross-fit-bounds fold         (the only choice with lean nuisances)
-#                                   fold f and its complement fitted
-#                                   separately (2K fits per study)
+# R/causal_sim.R does. Full, fold A and fold B are fitted in R/causal_sim.R's
+# order, so they equal that script's fits for the same seed and settings.
+# For M7 the forests fitted on fold f's complement give the complement's
+# bounds (out of bag) and predict fold f's nuisances.
 #
 # Usage, from the repo root (flags as R/causal_sim.R, plus those below):
 #   Rscript R/causal_sim_quick.R [--folds 5] [--reps 1000] [--n1 3000]
 #     [--nuisance-folds 5] [--n2 500] [--noise-scale-2 2.5]
 #     [--binary-denominator-1 15] [--nuisances lean|forest]
-#     [--cross-fit-bounds fold|complement]
 #     [--outcomes binary|continuous] [--lambdas-1 ...] [--lambdas-2 ...]
 #     [--workers W] [--backend multicore] [--out-dir ...] [--summarise-only]
 #
@@ -57,7 +55,6 @@ DEFAULT_FOLDS <- 5
 DEFAULT_OUT_DIR <- file.path("src", "outputs", "causal_sim_quick")
 DEFAULT_OUT_DIR_FOREST <- file.path("src", "outputs", "causal_sim_forest")
 NUISANCES <- c("lean", "forest")
-CROSS_FIT_BOUNDS <- c("fold", "complement")
 SINGLE_STUDY_SES <- 3  # Single-study coverage check: MC s.e. below nominal.
 
 
@@ -70,41 +67,27 @@ quick_fits <- function(n_folds) {
 }
 
 
-#' Validated --nuisances and --cross-fit-bounds, and the output directory.
+#' Validated --nuisances, and the output directory.
 #'
 #' A forest run left at the lean default directory is moved to
 #' DEFAULT_OUT_DIR_FOREST, so it never overwrites a lean run.
 #'
-#' @return List with nuisances, cross_fit_bounds and out_dir.
+#' @return List with nuisances and out_dir.
 nuisance_settings <- function(args) {
   if (!(args$nuisances %in% NUISANCES)) {
     stop(sprintf("nuisances must be one of %s, got %s",
                  paste(NUISANCES, collapse = ", "), args$nuisances))
   }
-  forest <- args$nuisances == "forest"
-  cross_fit_bounds <- args$cross_fit_bounds
-  if (is.na(cross_fit_bounds)) {
-    cross_fit_bounds <- if (forest) "complement" else "fold"
-  }
-  if (!(cross_fit_bounds %in% CROSS_FIT_BOUNDS)) {
-    stop(sprintf("cross-fit-bounds must be one of %s, got %s",
-                 paste(CROSS_FIT_BOUNDS, collapse = ", "), cross_fit_bounds))
-  }
-  if (!forest && cross_fit_bounds == "complement") {
-    stop(paste("cross-fit-bounds complement is implemented for forest",
-               "nuisances only"))
-  }
   out_dir <- args$out_dir
-  if (forest && identical(out_dir, DEFAULT_OUT_DIR)) {
+  if (args$nuisances == "forest" && identical(out_dir, DEFAULT_OUT_DIR)) {
     out_dir <- DEFAULT_OUT_DIR_FOREST
   }
-  list(nuisances = args$nuisances, cross_fit_bounds = cross_fit_bounds,
-       out_dir = out_dir)
+  list(nuisances = args$nuisances, out_dir = out_dir)
 }
 
 
-#' Settings of R/causal_sim.R plus the number of cross-fitting folds, the
-#' nuisance models and how M7's fold bounds are fitted.
+#' Settings of R/causal_sim.R plus the number of cross-fitting folds and the
+#' nuisance models.
 quick_config <- function(argv = commandArgs(trailingOnly = TRUE)) {
   extra <- list(
     optparse::make_option(
@@ -120,14 +103,7 @@ quick_config <- function(argv = commandArgs(trailingOnly = TRUE)) {
       "--nuisances", type = "character", default = "lean",
       help = paste("lean (parametric, R/helpers/dvds_lean.R) or forest",
                    "(DGK's forests; needs --outcomes binary)",
-                   "[default %default].")),
-    optparse::make_option(
-      "--cross-fit-bounds", dest = "cross_fit_bounds", type = "character",
-      default = NA_character_,
-      help = paste("How M7's fold bounds are fitted: complement (fold f's",
-                   "nuisances predicted by forests fitted on its complement;",
-                   "forest only) or fold (fold f fitted on its own)",
-                   "[default: complement with forests, fold with lean].")))
+                   "[default %default].")))
   args <- parse_args(argv, extra_options = extra,
                      default_out_dir = DEFAULT_OUT_DIR)
   nuisance <- nuisance_settings(args)
@@ -138,7 +114,6 @@ quick_config <- function(argv = commandArgs(trailingOnly = TRUE)) {
                  paste(cfg$outcomes, collapse = ", ")))
   }
   cfg$nuisances <- nuisance$nuisances
-  cfg$cross_fit_bounds <- nuisance$cross_fit_bounds
   if (args$folds < 2) stop(sprintf("folds must be >= 2, got %d", args$folds))
   smallest <- min(floor(cfg$n / args$folds))
   if (smallest < MIN_FOLD_SIZE) {
@@ -166,41 +141,55 @@ cross_fit_labels <- function(n, n_folds) {
 }
 
 
-#' The samples one study is fitted on: full, fold A, fold B, and for each
-#' cross-fitting fold f the fold (cf_held_f) and its complement (cf_train_f).
-study_samples <- function(study, n, cfg) {
-  split <- split_folds(n, cfg$frac_a)
-  labels <- cross_fit_labels(n, cfg$folds)
-  samples <- list(full = study, fold_a = subset_study(study, split$a),
-                  fold_b = subset_study(study, split$b))
-  for (f in seq_len(cfg$folds)) {
-    samples[[sprintf("cf_held_%d", f)]] <- subset_study(study, which(labels == f))
-    samples[[sprintf("cf_train_%d", f)]] <- subset_study(study,
-                                                         which(labels != f))
-  }
-  samples[cfg$fits]
+#' Lean fits of study k on its full sample, fold A and fold B.
+split_fits_lean <- function(study, k, rep, cfg, dgk) {
+  folds <- split_folds(cfg$n[k], cfg$frac_a)
+  samples <- list(full = study, fold_a = subset_study(study, folds$a),
+                  fold_b = subset_study(study, folds$b))
+  rows <- lapply(FITS, function(fit) {
+    est <- dvds_bounds_lean(samples[[fit]], cfg$lambdas[[k]], cfg$outcomes,
+                            dgk, cfg$nuisance_folds)
+    data.frame(rep = rep, study = k, fit = fit, est)
+  })
+  do.call(rbind, rows)
 }
 
 
-#' Lean DVDS estimates for one replicate: 2 studies x (3 + 2K) fits.
+#' Lean fits of study k for M7, by standard cross-fitting: for each fold f,
+#' models fitted on its complement give the complement's bounds (cf_train_f,
+#' for the weights) and fold f's bounds (cf_held_f).
+cross_fits_lean <- function(study, k, rep, cfg, dgk) {
+  labels <- cross_fit_labels(cfg$n[k], cfg$folds)
+  rows <- lapply(seq_len(cfg$folds), function(f) {
+    est <- dvds_bounds_lean_train_test(
+      subset_study(study, which(labels != f)),
+      subset_study(study, which(labels == f)), cfg$lambdas[[k]],
+      cfg$outcomes, dgk, cfg$nuisance_folds)
+    rbind(data.frame(rep = rep, study = k, fit = sprintf("cf_train_%d", f),
+                     est$train),
+          data.frame(rep = rep, study = k, fit = sprintf("cf_held_%d", f),
+                     est$test))
+  })
+  do.call(rbind, rows)
+}
+
+
+#' Lean DVDS estimates for one replicate: full, fold A and fold B of both
+#' studies, then the cross-fitting fits of both.
 #'
 #' @return data.frame of dvds_bounds_lean() rows with rep, study and fit.
 simulate_replicate_quick <- function(rep, cfg, progress) {
   dgk <- load_dgk(1)
   studies <- Map(simulate_study, cfg$n, cfg$noise_scale,
                  cfg$binary_denominator)
-  rows <- list()
-  for (k in seq_along(studies)) {
-    samples <- study_samples(studies[[k]], cfg$n[k], cfg)
-    for (fit in names(samples)) {
-      est <- dvds_bounds_lean(samples[[fit]], cfg$lambdas[[k]], cfg$outcomes,
-                              dgk, cfg$nuisance_folds)
-      rows[[length(rows) + 1]] <- data.frame(rep = rep, study = k, fit = fit,
-                                             est)
-    }
-  }
+  split_rows <- lapply(seq_along(studies), function(k) {
+    split_fits_lean(studies[[k]], k, rep, cfg, dgk)
+  })
+  cross_rows <- lapply(seq_along(studies), function(k) {
+    cross_fits_lean(studies[[k]], k, rep, cfg, dgk)
+  })
   progress(message = sprintf("rep %d/%d", rep, cfg$reps))
-  do.call(rbind, rows)
+  do.call(rbind, c(split_rows, cross_rows))
 }
 
 
@@ -219,23 +208,16 @@ split_fits_forest <- function(study, k, rep, cfg) {
 }
 
 
-#' Forest fits of study k for M7: for each cross-fitting fold f, bounds of
-#' its complement (cf_train_f, which give the weights) and of fold f
-#' (cf_held_f), as set by cfg$cross_fit_bounds.
+#' Forest fits of study k for M7, by standard cross-fitting: for each fold
+#' f, forests fitted on its complement give the complement's bounds
+#' (cf_train_f, for the weights) and fold f's bounds (cf_held_f).
 cross_fits_forest <- function(study, k, rep, cfg) {
   labels <- cross_fit_labels(cfg$n[k], cfg$folds)
   rows <- lapply(seq_len(cfg$folds), function(f) {
     held <- subset_study(study, which(labels == f))
     train <- subset_study(study, which(labels != f))
-    if (cfg$cross_fit_bounds == "complement") {
-      est <- dvds_bounds_train_test(train, held, cfg$lambdas[[k]],
-                                    cfg$num_threads, cfg$outcomes)
-    } else {
-      est <- list(train = dvds_bounds(train, cfg$lambdas[[k]],
-                                      cfg$num_threads, cfg$outcomes),
-                  test = dvds_bounds(held, cfg$lambdas[[k]], cfg$num_threads,
-                                     cfg$outcomes))
-    }
+    est <- dvds_bounds_train_test(train, held, cfg$lambdas[[k]],
+                                  cfg$num_threads, cfg$outcomes)
     rbind(data.frame(rep = rep, study = k, fit = sprintf("cf_train_%d", f),
                      est$train),
           data.frame(rep = rep, study = k, fit = sprintf("cf_held_%d", f),
@@ -463,14 +445,15 @@ run_sanity_checks_quick <- function(estimates, summary, single, alpha) {
 # ----------------------------- output ------------------------------
 #' One line describing the nuisance models and M7's fold bounds.
 nuisance_description <- function(cfg) {
+  cross_fit <- paste("cross-fit: standard (fold f's nuisances from models",
+                     "fitted on the other folds)")
   if (cfg$nuisances == "lean") {
     return(sprintf(paste("nuisances: parametric, true functional forms",
                          "(R/helpers/dvds_lean.R), out of fold with %d",
-                         "folds | cross-fit bounds: %s"),
-                   cfg$nuisance_folds, cfg$cross_fit_bounds))
+                         "folds | %s"), cfg$nuisance_folds, cross_fit))
   }
   sprintf(paste("nuisances: DGK's forests (dvds_sim.R lines 29-42),",
-                "out of bag | cross-fit bounds: %s"), cfg$cross_fit_bounds)
+                "out of bag | %s"), cross_fit)
 }
 
 

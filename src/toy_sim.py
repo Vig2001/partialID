@@ -208,15 +208,47 @@ def plug_in_weights(
     return w_L, w_U
 
 
+def bounds_train_test(
+    Y_train: Sequence[np.ndarray],
+    Y_test: Sequence[np.ndarray],
+    Delta: np.ndarray,
+    n_full: Sequence[int],
+) -> tuple[BoundEstimates, BoundEstimates]:
+    """Bounds of a training and a held-out sample (standard cross-fitting).
+
+    The toy counterpart of dvds_bounds_train_test() in R/helpers/dgk.R and
+    dvds_bounds_lean_train_test() in R/helpers/dvds_lean.R. There, nuisance
+    models fitted on the training sample predict at the held-out units.
+    Here Delta is known and the bounds are sample means, so there is no
+    nuisance model: the held-out bounds do not depend on the training
+    sample, and the training sample only sets the weights.
+
+    Args:
+        Y_train: Training outcomes for each dataset, shapes (R, m_k).
+        Y_test: Held-out outcomes for each dataset, shapes (R, h_k).
+        Delta: Half-width of each dataset's identified band, shape (2,).
+        n_full: Full-sample sizes; the training variances are scaled to
+            them, the size of the final CI's variance.
+
+    Returns:
+        (train, test) bound estimates; test variances use the held-out
+        sizes.
+    """
+    train = estimate_bounds(Y_train, Delta, n_full)
+    test = estimate_bounds(Y_test, Delta, [y.shape[1] for y in Y_test])
+    return train, test
+
+
 def cross_fit_ci(
     Y: Sequence[np.ndarray], params: DGPParams, cfg: ToyConfig, n_folds: int
 ) -> ci_methods.CIResult:
     """Cross-fitted convex CI with K = n_folds folds per dataset.
 
-    For each fold, the weights come from the other folds, with variances
-    scaled to the full-sample size (the size of the final CI's variance);
-    the bounds come from the fold itself. Rows are i.i.d., so contiguous
-    column blocks are a random partition.
+    Standard cross-fitting, as in R/causal_sim_quick.R: for each fold, the
+    other folds give the weights (bounds_train_test()), and the fold itself
+    gives the bounds they weight. The weights are the only quantity
+    estimated from other folds. Rows are i.i.d., so contiguous column blocks
+    are a random partition.
     """
     blocks = [np.array_split(np.arange(n_k), n_folds) for n_k in cfg.n]
     L, U, s2, w_L, w_U = [], [], [], [], []
@@ -224,11 +256,10 @@ def cross_fit_ci(
         held_out = [b[k] for b in blocks]
         train = [np.setdiff1d(np.arange(n_k), h)
                  for n_k, h in zip(cfg.n, held_out)]
-        fit = estimate_bounds([y[:, t] for y, t in zip(Y, train)],
-                              params.Delta, cfg.n)
+        fit, held = bounds_train_test(
+            [y[:, t] for y, t in zip(Y, train)],
+            [y[:, h] for y, h in zip(Y, held_out)], params.Delta, cfg.n)
         w_L_k, w_U_k = plug_in_weights(fit, cfg.z)
-        held = estimate_bounds([y[:, h] for y, h in zip(Y, held_out)],
-                               params.Delta, [h.size for h in held_out])
         L.append(held.L)
         U.append(held.U)
         s2.append(held.s2)

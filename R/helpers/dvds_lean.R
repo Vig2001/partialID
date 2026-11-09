@@ -17,7 +17,9 @@
 # Every unit's nuisances are predicted out of fold (cross_fit_nuisances(),
 # 5 folds within each fit by default), as DGK's forests predict out of bag:
 # a unit's own outcome never enters the fit that predicts for it. In-sample
-# fits shrink the residuals and bias both bounds inwards by O(p / n).
+# fits shrink the residuals and bias both bounds inwards by O(p / n). For
+# the cross-fitted CI, a held-out fold's nuisances come from models fitted
+# on the other folds (dvds_bounds_lean_train_test(), standard cross-fitting).
 # The binary bounds come from DGK's dvds.binary(), sourced unmodified from
 # their clone (it takes mu0, mu1 and e only). The continuous bounds use
 # DGK's influence function (simplified_dvds.R, phi.continuous()), written
@@ -90,6 +92,29 @@ fit_location_scale <- function(features, Z, Y, newdata) {
 }
 
 
+#' Nuisance models fitted on one sample and predicted at other units.
+#'
+#' @param train List from simulate_study() (or a subset of one): the units
+#'   the models are fitted on.
+#' @param test_features lean_features() of the units to predict for.
+#' @param outcomes Subset of "binary", "continuous".
+#' @return List with e, and mu0, mu1 (binary) and m0, m1, s0, s1
+#'   (continuous), each of length nrow(test_features).
+predict_nuisances <- function(train, test_features, outcomes) {
+  train_features <- lean_features(train$X)
+  pred <- list(e = fit_propensity(train_features, train$Z, test_features))
+  if ("binary" %in% outcomes) {
+    pred <- c(pred, fit_binary_means(train_features, train$Z, train$Ybinary,
+                                     test_features))
+  }
+  if ("continuous" %in% outcomes) {
+    pred <- c(pred, fit_location_scale(train_features, train$Z,
+                                       train$Ycontin, test_features))
+  }
+  pred
+}
+
+
 #' Nuisance predictions for every unit of a study, out of fold.
 #'
 #' The units are split at random into n_folds folds; each fold's predictions
@@ -112,20 +137,10 @@ cross_fit_nuisances <- function(study, outcomes, n_folds) {
   for (f in seq_len(n_folds)) {
     test <- folds == f
     train <- if (n_folds == 1) test else !test
-    train_x <- features[train, , drop = FALSE]
-    test_x <- features[test, , drop = FALSE]
-    pred <- list(e = fit_propensity(train_x, study$Z[train], test_x))
-    if ("binary" %in% outcomes) {
-      pred <- c(pred, fit_binary_means(train_x, study$Z[train],
-                                       study$Ybinary[train], test_x))
-    }
-    if ("continuous" %in% outcomes) {
-      pred <- c(pred, fit_location_scale(train_x, study$Z[train],
-                                         study$Ycontin[train], test_x))
-    }
+    pred <- predict_nuisances(subset_study(study, which(train)),
+                              features[test, , drop = FALSE], outcomes)
     for (name in nuisance_names) nu[[name]][test] <- pred[[name]]
   }
-  stopifnot(all(nu$e > 0 & nu$e < 1))  # DGK's code divides by e and 1 - e.
   nu
 }
 
@@ -211,6 +226,48 @@ dvds_bounds_lean <- function(study, lambdas, outcomes, dgk,
                  MIN_ARM_SIZE, sum(study$Z), sum(1 - study$Z)))
   }
   nu <- cross_fit_nuisances(study, outcomes, nuisance_folds)
+  bounds_from_nuisances(study, lambdas, outcomes, nu, dgk)
+}
+
+
+#' DVDS bounds of a training sample and a held-out sample, with lean
+#' nuisances fitted on the training sample (standard cross-fitting).
+#'
+#' The training sample's bounds are those of dvds_bounds_lean(), with
+#' out-of-fold nuisances within it; they only set the convex weights. The
+#' held-out sample's nuisances are predicted by models fitted on the whole
+#' training sample, so no unit's nuisances use its own outcome, and its
+#' bounds are means over the held-out units given the training sample.
+#'
+#' @param train,test Lists from simulate_study() (or subsets of one).
+#' @param lambdas Sensitivity parameters, each >= 1.
+#' @param outcomes Non-empty subset of "binary", "continuous".
+#' @param dgk Environment from load_dgk(), which supplies dvds.binary().
+#' @param nuisance_folds Folds for the training sample's own out-of-fold
+#'   nuisance predictions.
+#' @return List with data.frames train and test; see bounds_from_dgk().
+dvds_bounds_lean_train_test <- function(train, test, lambdas, outcomes, dgk,
+                                        nuisance_folds = NUISANCE_FOLDS) {
+  if (length(test$Z) < 2) {
+    stop(sprintf("the held-out sample needs >= 2 units, got %d",
+                 length(test$Z)))
+  }
+  train_bounds <- dvds_bounds_lean(train, lambdas, outcomes, dgk,
+                                   nuisance_folds)
+  nu_test <- predict_nuisances(train, lean_features(test$X), outcomes)
+  list(train = train_bounds,
+       test = bounds_from_nuisances(test, lambdas, outcomes, nu_test, dgk))
+}
+
+
+#' DVDS bounds of one sample from nuisance predictions at its units.
+#'
+#' @param study List from simulate_study() (or a subset of one).
+#' @param nu List from cross_fit_nuisances() or predict_nuisances(), for the
+#'   units of study.
+#' @return data.frame, one row per (outcome, Lambda); see bounds_from_dgk().
+bounds_from_nuisances <- function(study, lambdas, outcomes, nu, dgk) {
+  stopifnot(all(nu$e > 0 & nu$e < 1))  # DGK's code divides by e and 1 - e.
   n <- length(study$Z)
   rows <- list()
   if ("binary" %in% outcomes) {
