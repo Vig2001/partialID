@@ -10,16 +10,17 @@ Usage, from the repo root:
     python -m src.latex.causal_sim_paper_figs --summary <summary_full.csv>
         --outcome continuous|binary [--lambda-1-range LO HI]
         [--lambda-2-range LO HI] [--max-gap-se G] [--hide dataset2]
-        [--log-x] [--suffix _name] [--alpha 0.05]
+        [--log-x] [--suffix _name] [--macro-prefix causal] [--alpha 0.05]
 Outputs, beside the summary (or in --out-dir):
     width_ratio_box_<outcome><suffix>.pdf    one box per method
     width_ratio_stats_<outcome><suffix>.csv  per method: selected cells,
         valid cells, and the median, 90th percentile and maximum ratio over
         the valid ones
     width_ratio_<outcome><suffix>_macros.tex  caption macros: the number of
-        selected cells, \\causal<Outcome>RatioCells, and each method's
+        selected cells, \\<prefix><Outcome>RatioCells, and each method's
         percentage of them where it is valid, e.g.
-        \\causalBinaryRatioValidLargeOS
+        \\causalBinaryRatioValidLargeOS; a different --macro-prefix (e.g.
+        causalForest) lets two runs' figures share a document
 """
 
 import argparse
@@ -60,6 +61,8 @@ METHOD_COLOURS = {
     "convex (cross-fit)": toy_sim_plots.PALETTE[4],
     "convex (CLR)": toy_sim_plots.PALETTE[5],
 }
+# Start of every caption-macro name, unless --macro-prefix is given.
+DEFAULT_MACRO_PREFIX = "causal"
 # Caption-macro name of each method (letters only, as LaTeX requires).
 METHOD_MACROS = {
     DATASET_1: "LargeOS", DATASET_2: "SmallOS",
@@ -158,12 +161,17 @@ def panel_title(outcome: str, cells: pd.DataFrame) -> str:
             rf"{cells.lambda_2.max():g}]$")
 
 
-def caption_macros(stats_table: pd.DataFrame, outcome: str) -> str:
+def caption_macros(
+    stats_table: pd.DataFrame,
+    outcome: str,
+    macro_prefix: str = DEFAULT_MACRO_PREFIX,
+) -> str:
     """LaTeX \\def lines: number of cells and each method's valid percentage.
 
-    Defined with \\def, so inputting the file twice does not raise an error.
+    Defined with \\def, so inputting the file twice does not raise an error;
+    names start \\<macro_prefix><Outcome>Ratio.
     """
-    prefix = f"causal{outcome.capitalize()}Ratio"
+    prefix = f"{macro_prefix}{outcome.capitalize()}Ratio"
     lines = [rf"\def\{prefix}Cells{{{int(stats_table.cells.iloc[0])}}}"]
     for row in stats_table.itertuples():
         percent = 100 * row.valid_cells / row.cells
@@ -197,11 +205,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="Logarithmic ratio axis.")
     parser.add_argument("--suffix", default="",
                         help="Appended to the output names, e.g. _tie.")
+    parser.add_argument("--macro-prefix", default=DEFAULT_MACRO_PREFIX,
+                        help="Start of the caption-macro names (letters "
+                             "only), e.g. causalForest, so that two runs' "
+                             "macros can share a document [default "
+                             "%(default)s].")
     parser.add_argument("--alpha", type=float, default=0.05,
                         help="Nominal level of the run (see run_info.txt).")
     parser.add_argument("--out-dir", type=Path, default=None,
                         help="Output directory; defaults to the summary's.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not (args.macro_prefix.isascii() and args.macro_prefix.isalpha()):
+        parser.error(f"--macro-prefix must be ASCII letters only, got "
+                     f"{args.macro_prefix!r}")
+    return args
 
 
 def main() -> None:
@@ -230,7 +247,8 @@ def main() -> None:
     macros_path = out_dir / f"width_ratio_{stem}_macros.tex"
     macros_path.write_text(
         "% Written by python -m src.latex.causal_sim_paper_figs from "
-        f"{args.summary.name}\n" + caption_macros(ratio_table, args.outcome))
+        f"{args.summary.name}\n"
+        + caption_macros(ratio_table, args.outcome, args.macro_prefix))
     print(ratio_table.round(3).to_string(index=False))
     # A hidden method that is never the narrowest valid CI leaves every
     # shown ratio unchanged, so a caption need not mention it.

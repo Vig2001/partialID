@@ -194,3 +194,90 @@ dvds_bounds <- function(study, lambdas, num_threads = NULL,
   }
   do.call(rbind, rows)
 }
+
+
+#' Binary-outcome nuisances fitted on a training sample only.
+#'
+#' The forests are those of dvds_sim.R lines 29-42 for the binary outcome,
+#' with the same grf calls (the propensity forest is kept, so that it can
+#' also predict at the held-out units); the continuous regression forests
+#' are not needed and are not fitted. Training units get out-of-bag
+#' predictions, as in dgk_nuisances(); held-out units get the same forests'
+#' predictions at their covariates, so no unit's nuisances use its outcome.
+#'
+#' @param train,test Lists from simulate_dgk() (or subsets of one).
+#' @param dgk Environment from load_dgk(), which supplies the forests.
+#' @return List with train and test, each a list of e, mu0 and mu1.
+binary_nuisances_train_test <- function(train, test, dgk) {
+  scope <- new.env(parent = dgk)
+  for (name in c("X", "Z", "Ybinary")) scope[[name]] <- train[[name]]
+  scope$n <- length(train$Z)
+  scope$X_test <- test$X
+  local({
+    fit_e <- probability_forest(X = X, Y = factor(Z))
+    e <- predict(fit_e)$predictions[, "1"]
+    mu0binary <- mu1binary <- numeric(n)
+    fit0binary <- probability_forest(X = X[Z == 0, ],
+                                     Y = factor(Ybinary[Z == 0]))
+    fit1binary <- probability_forest(X = X[Z == 1, ],
+                                     Y = factor(Ybinary[Z == 1]))
+    mu0binary[Z == 0] <- predict(fit0binary)$predictions[, "1"]
+    mu0binary[Z == 1] <- predict(fit0binary, X[Z == 1, ])$predictions[, "1"]
+    mu1binary[Z == 0] <- predict(fit1binary, X[Z == 0, ])$predictions[, "1"]
+    mu1binary[Z == 1] <- predict(fit1binary)$predictions[, "1"]
+    e_test <- predict(fit_e, X_test)$predictions[, "1"]
+    mu0_test <- predict(fit0binary, X_test)$predictions[, "1"]
+    mu1_test <- predict(fit1binary, X_test)$predictions[, "1"]
+  }, envir = scope)
+  # DGK's estimator divides by e and 1 - e without a check.
+  stopifnot(all(scope$e > 0 & scope$e < 1),
+            all(scope$e_test > 0 & scope$e_test < 1))
+  list(train = list(e = scope$e, mu0 = scope$mu0binary, mu1 = scope$mu1binary),
+       test = list(e = scope$e_test, mu0 = scope$mu0_test,
+                   mu1 = scope$mu1_test))
+}
+
+
+#' DVDS binary-outcome bounds for a training sample and a held-out sample,
+#' both from nuisances fitted on the training sample (standard cross-fitting).
+#'
+#' Nuisances come from binary_nuisances_train_test(); each sample then goes
+#' through DGK's dvds.binary(), unmodified, one Lambda at a time (as in
+#' dvds_sim.R lines 45-49). The held-out bounds are means over the held-out
+#' units given the training sample, and their variances are those of DGK's
+#' CIs for that sample size.
+#'
+#' @param train,test Lists from simulate_dgk() (or subsets of one).
+#' @param lambdas Sensitivity parameters, each >= 1.
+#' @param num_threads grf threads per forest; NULL uses every core.
+#' @param outcomes Must be "binary": DGK's continuous DVDS fits its own
+#'   quantile forests, which have no train/test version here.
+#' @return List with data.frames train and test; see bounds_from_dgk().
+dvds_bounds_train_test <- function(train, test, lambdas, num_threads = NULL,
+                                   outcomes = "binary") {
+  validate_lambdas(lambdas)
+  if (!identical(outcomes, "binary")) {
+    stop(sprintf("only the binary outcome is supported, got outcomes = %s",
+                 paste(outcomes, collapse = ", ")))
+  }
+  if (min(sum(train$Z), sum(1 - train$Z)) < MIN_ARM_SIZE) {
+    stop(sprintf(paste("each training arm needs >= %d units, got %d treated,",
+                       "%d control"),
+                 MIN_ARM_SIZE, sum(train$Z), sum(1 - train$Z)))
+  }
+  if (length(test$Z) < 2) {
+    stop(sprintf("the held-out sample needs >= 2 units, got %d",
+                 length(test$Z)))
+  }
+  dgk <- load_dgk(num_threads)
+  nu <- binary_nuisances_train_test(train, test, dgk)
+  sample_bounds <- function(study, nuisances) {
+    out <- do.call(rbind, lapply(lambdas, function(l) {
+      dgk$dvds.binary(Y = study$Ybinary, Z = study$Z, mu0 = nuisances$mu0,
+                      mu1 = nuisances$mu1, e = nuisances$e, Lambda = l)
+    }))
+    bounds_from_dgk(out, "binary", length(study$Z))
+  }
+  list(train = sample_bounds(train, nu$train),
+       test = sample_bounds(test, nu$test))
+}

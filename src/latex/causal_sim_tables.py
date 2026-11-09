@@ -13,7 +13,7 @@ Usage, from the repo root:
         [--outcome continuous] [--lambdas-1 3 3.5 4 4.5 5] [--top 3]
         [--metric ci|band] [--methods dataset1 dataset2 intersection split
         crossfit clr convexclr] (default: the first four)
-        [--macro-decimals 3] [--alpha 0.05]
+        [--macro-decimals 3] [--macro-prefix causal] [--alpha 0.05]
 Outputs, beside the summary:
     width_coverage_best_<outcome>.tex  rows: Lambda_1, Lambda_2, then
         width (coverage) per method
@@ -21,9 +21,11 @@ Outputs, beside the summary:
         width, then mean estimated band width per method
     <table>_macros.tex                 median, min and max MC s.e. in the
         table, as LaTeX macros for the caption, named by outcome:
-        \\causal<Outcome>WidthMcse{Median,Min,Max} and
-        \\causal<Outcome>CovMcse{...} (ci) or \\causal<Outcome>BandMcse{...}
-        (band), e.g. \\causalBinaryWidthMcseMedian
+        \\<prefix><Outcome>WidthMcse{Median,Min,Max} and
+        \\<prefix><Outcome>CovMcse{...} (ci) or
+        \\<prefix><Outcome>BandMcse{...} (band), e.g.
+        \\causalBinaryWidthMcseMedian; a different --macro-prefix (e.g.
+        causalForest) lets two runs' tables share a document
 """
 
 import argparse
@@ -51,7 +53,9 @@ METHOD_NAMES = {"dataset1": DATASET_1, "dataset2": DATASET_2,
                 "convexclr": "convex (CLR)"}
 # Default columns: the methods of R/causal_sim.R.
 DEFAULT_METHODS = ["dataset1", "dataset2", "intersection", "split"]
-# Caption macros: name after \causal<Outcome> -> column of MC s.e.
+# Start of every caption-macro name, unless --macro-prefix is given.
+DEFAULT_MACRO_PREFIX = "causal"
+# Caption macros: name after \<prefix><Outcome> -> column of MC s.e.
 CAPTION_MACROS = {
     "ci": {"WidthMcse": "width_mcse", "CovMcse": "cov_joint_mcse"},
     "band": {"BandMcse": "band_width_mcse"},
@@ -153,16 +157,21 @@ def table_rows(
 
 
 def caption_macros(
-    cells: pd.DataFrame, metric: str, outcome: str, decimals: int
+    cells: pd.DataFrame,
+    metric: str,
+    outcome: str,
+    decimals: int,
+    macro_prefix: str = DEFAULT_MACRO_PREFIX,
 ) -> str:
     """LaTeX \\def lines: median, min and max MC s.e. of each tabulated quantity.
 
-    Macros are named \\causal<Outcome><quantity><stat>, so the tables of both
-    outcomes can share a document.
+    Macros are named \\<macro_prefix><Outcome><quantity><stat>, so the tables
+    of both outcomes (and, with different prefixes, of two runs) can share a
+    document.
     """
     lines = []
     for quantity, column in CAPTION_MACROS[metric].items():
-        prefix = f"causal{outcome.capitalize()}{quantity}"
+        prefix = f"{macro_prefix}{outcome.capitalize()}{quantity}"
         stats = {"Median": cells[column].median(), "Min": cells[column].min(),
                  "Max": cells[column].max()}
         lines.extend(rf"\def\{prefix}{name}{{{value:.{decimals}f}}}"
@@ -191,6 +200,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "and convexclr need a R/causal_sim_quick.R run.")
     parser.add_argument("--macro-decimals", type=int, default=3,
                         help="Decimal places of the MC s.e. caption macros.")
+    parser.add_argument("--macro-prefix", default=DEFAULT_MACRO_PREFIX,
+                        help="Start of the caption-macro names (letters "
+                             "only), e.g. causalForest, so that two runs' "
+                             "macros can share a document [default "
+                             "%(default)s].")
     parser.add_argument("--alpha", type=float, default=0.05,
                         help="Nominal level of the run (see run_info.txt).")
     parser.add_argument("--out-dir", type=Path, default=None,
@@ -203,6 +217,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     if args.macro_decimals < 0:
         parser.error(f"--macro-decimals must be >= 0, got "
                      f"{args.macro_decimals}")
+    if not (args.macro_prefix.isascii() and args.macro_prefix.isalpha()):
+        parser.error(f"--macro-prefix must be ASCII letters only, got "
+                     f"{args.macro_prefix!r}")
     return args
 
 
@@ -224,7 +241,8 @@ def main() -> None:
     macros_path = table_path.with_name(f"{table_path.stem}_macros.tex")
     macros_path.write_text(
         header + caption_macros(pair_rows(df, pairs, methods), args.metric,
-                                args.outcome, args.macro_decimals)
+                                args.outcome, args.macro_decimals,
+                                args.macro_prefix)
     )
     print(pairs.round(3).to_string(index=False))
     print(f"Written to {table_path}\nWritten to {macros_path}")

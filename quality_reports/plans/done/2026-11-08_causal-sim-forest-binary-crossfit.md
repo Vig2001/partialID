@@ -1,6 +1,12 @@
 # Plan: forest-based binary simulation with every valid method, and its near-tie box plot
 
-Date: 2026-11-08. Status: awaiting approval.
+Date: 2026-11-08. Status: DONE 2026-11-09, except the paper copies, which await the user's approval and a choice of placement. The open choices were settled by the user on 2026-11-08, and the user said go the same day. Results: notes `causal_sim_quick_explained.tex`, Section `sec:forest`.
+
+Decisions:
+- **Design:** the paper's k = 15 binary design, n = (3000, 500), grids 1:4:0.05 and 1:2:0.05, seed 1.
+- **Cross-fit with forests:** option (b), standard cross-fitting (complement forests predict the held-out fold).
+- **Lean run:** not aligned; it keeps fold-alone held-out fits, and Figure 4 stays as it is. The forest figure's caption and the notes must say that the two cross-fitted CIs are built differently.
+- **Replicates:** 1000 (about 4 h, overnight, under `caffeinate -is`).
 
 ## Goal
 
@@ -91,14 +97,23 @@ Each replicate fits full, fold A and fold B for both studies first, in the same 
 
 ## Output
 
-- **Run folder:** `src/outputs/causal_sim_forest_binary_k15/`.
-- **Figure:** `python -m src.latex.causal_sim_paper_figs --summary .../summary_full.csv --outcome binary --max-gap-se 1 --suffix _gap1se --hide dataset2`, giving `width_ratio_box_binary_gap1se.pdf` and the stats CSV.
+The user asked (2026-11-08) for a **new table and new plots that replace
+nothing**. Every output goes to the new run folder under new names, and the
+caption macros get their own prefix, `causalForest`. Without it, the forest
+macros would have the same names as the current binary figure's and Table 5's
+(`\causalBinary...`), and inputting both files would silently change the
+other's caption numbers. `--macro-prefix` was added to both scripts for this
+(2026-11-08). It defaults to `causal`, and with the default the Table 5 and
+binary box-plot commands reproduce the current paper copies exactly
+(checked).
+
+- **Run folder:** `src/outputs/causal_sim_forest_binary_k15/` (new).
+- **Figure:** `python -m src.latex.causal_sim_paper_figs --summary src/outputs/causal_sim_forest_binary_k15/summary_full.csv --outcome binary --max-gap-se 1 --suffix _gap1se_forest --hide dataset2 --macro-prefix causalForest`. This gives `width_ratio_box_binary_gap1se_forest.pdf`, `width_ratio_stats_binary_gap1se_forest.csv` and `width_ratio_binary_gap1se_forest_macros.tex` (`\causalForestBinaryRatio...`). Keep `--hide dataset2` only if the script reports that dataset 2 is the narrowest valid CI in 0 cells.
+- **Table:** `python -m src.latex.causal_sim_tables --summary src/outputs/causal_sim_forest_binary_k15/summary_full.csv --outcome binary --metric ci --lambdas-1 1.5 2 2.5 3 3.5 --top 3 --macro-decimals 4 --methods dataset1 dataset2 intersection clr split crossfit convexclr --macro-prefix causalForest`. This gives `width_coverage_best_binary.tex` and its macros (`\causalForestBinaryWidthMcse...`, `\causalForestBinaryCovMcse...`). The rows are chosen from the M3 and M6 columns, which equal Table 5's, so the rows should be Table 5's with three more columns.
+- **Paper copies** (via `/update-paper-figs`, after approval): `Figures/causal_sim/width_ratio_box_binary_gap1se_forest_<hash>.pdf` and `width_ratio_binary_gap1se_forest_macros_<hash>.tex`; `Tables/causal_sim/width_coverage_best_binary_k15_forest_<hash>.tex` and `..._forest_macros_<hash>.tex`. None replaces an existing file, and no paper `.tex` is edited until the user decides where they go.
 - **Near ties:** defined with the forest run's own standard errors, so the cell set may differ slightly from the lean run's 384.
 - **Paper:** placement (a second figure, or a panel beside Figure 4's binary one) to be decided after you see it.
 
-## Open choices (defaults in bold)
+## Open choices
 
-1. **The design ("specific variance"):** **the paper's k = 15, n = (3000, 500)**, or another k or n, i.e. a different standard-error ratio between the studies.
-2. **M7 with forests:** **(b) standard cross-fitting** or (a) as in the lean run.
-3. **Align the lean M7 to (b):** **yes** (rerun lean, about 20 min, and regenerate Figure 4) or no.
-4. **Replicates:** **1000 (about 4 h, overnight)** or 500 (about 2 h).
+All settled; see Decisions at the top.

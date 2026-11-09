@@ -15,16 +15,31 @@
 # Fits per study and replicate: full, fold A, fold B, then for each fold f
 # of the K the held-out fold and its complement (3 + 2K in all).
 #
-# Usage, from the repo root (flags as R/causal_sim.R, plus --folds):
+# --nuisances forest (binary outcome only) uses DGK's forests instead, as
+# R/causal_sim.R does. Full, fold A and fold B of both studies are fitted
+# first, in R/causal_sim.R's order, so they equal that script's fits for the
+# same seed and settings. M7 then needs, for each fold f, weights and bounds:
+#   --cross-fit-bounds complement   (default with forests) forests fitted on
+#                                   the complement give its weights (out of
+#                                   bag) and predict fold f's nuisances, for
+#                                   fold f's bounds (K fits per study)
+#   --cross-fit-bounds fold         (the only choice with lean nuisances)
+#                                   fold f and its complement fitted
+#                                   separately (2K fits per study)
+#
+# Usage, from the repo root (flags as R/causal_sim.R, plus those below):
 #   Rscript R/causal_sim_quick.R [--folds 5] [--reps 1000] [--n1 3000]
 #     [--nuisance-folds 5] [--n2 500] [--noise-scale-2 2.5]
-#     [--binary-denominator-1 15]
+#     [--binary-denominator-1 15] [--nuisances lean|forest]
+#     [--cross-fit-bounds fold|complement]
 #     [--outcomes binary|continuous] [--lambdas-1 ...] [--lambdas-2 ...]
 #     [--workers W] [--backend multicore] [--out-dir ...] [--summarise-only]
 #
-# Plan:    quality_reports/plans/done/2026-11-07_causal-sim-quick.md
+# Plans:   quality_reports/plans/done/2026-11-07_causal-sim-quick.md,
+#          2026-11-08_causal-sim-forest-binary-crossfit.md (forest mode)
 # Notes:   partialID_Overleaf/Notes/Simulation_Notes/causal_sim_quick_explained.tex
-# Outputs: src/outputs/causal_sim_quick/ by default (as R/causal_sim.R)
+# Outputs: src/outputs/causal_sim_quick/ by default (lean), or
+#          src/outputs/causal_sim_forest/ (forest)
 # TODO: after the CLeaR deadline, move the parts shared with causal_sim.R
 #   (summary loop, run info) into R/helpers/ instead of overriding them here.
 
@@ -40,6 +55,9 @@ M9 <- "convex (CLR)"
 METHODS_QUICK <- c(M5_D1, M5_D2, M6, M3, M7, M8, M9)
 DEFAULT_FOLDS <- 5
 DEFAULT_OUT_DIR <- file.path("src", "outputs", "causal_sim_quick")
+DEFAULT_OUT_DIR_FOREST <- file.path("src", "outputs", "causal_sim_forest")
+NUISANCES <- c("lean", "forest")
+CROSS_FIT_BOUNDS <- c("fold", "complement")
 SINGLE_STUDY_SES <- 3  # Single-study coverage check: MC s.e. below nominal.
 
 
@@ -52,7 +70,41 @@ quick_fits <- function(n_folds) {
 }
 
 
-#' Settings of R/causal_sim.R plus the number of cross-fitting folds.
+#' Validated --nuisances and --cross-fit-bounds, and the output directory.
+#'
+#' A forest run left at the lean default directory is moved to
+#' DEFAULT_OUT_DIR_FOREST, so it never overwrites a lean run.
+#'
+#' @return List with nuisances, cross_fit_bounds and out_dir.
+nuisance_settings <- function(args) {
+  if (!(args$nuisances %in% NUISANCES)) {
+    stop(sprintf("nuisances must be one of %s, got %s",
+                 paste(NUISANCES, collapse = ", "), args$nuisances))
+  }
+  forest <- args$nuisances == "forest"
+  cross_fit_bounds <- args$cross_fit_bounds
+  if (is.na(cross_fit_bounds)) {
+    cross_fit_bounds <- if (forest) "complement" else "fold"
+  }
+  if (!(cross_fit_bounds %in% CROSS_FIT_BOUNDS)) {
+    stop(sprintf("cross-fit-bounds must be one of %s, got %s",
+                 paste(CROSS_FIT_BOUNDS, collapse = ", "), cross_fit_bounds))
+  }
+  if (!forest && cross_fit_bounds == "complement") {
+    stop(paste("cross-fit-bounds complement is implemented for forest",
+               "nuisances only"))
+  }
+  out_dir <- args$out_dir
+  if (forest && identical(out_dir, DEFAULT_OUT_DIR)) {
+    out_dir <- DEFAULT_OUT_DIR_FOREST
+  }
+  list(nuisances = args$nuisances, cross_fit_bounds = cross_fit_bounds,
+       out_dir = out_dir)
+}
+
+
+#' Settings of R/causal_sim.R plus the number of cross-fitting folds, the
+#' nuisance models and how M7's fold bounds are fitted.
 quick_config <- function(argv = commandArgs(trailingOnly = TRUE)) {
   extra <- list(
     optparse::make_option(
@@ -61,11 +113,32 @@ quick_config <- function(argv = commandArgs(trailingOnly = TRUE)) {
     optparse::make_option(
       "--nuisance-folds", dest = "nuisance_folds", type = "integer",
       default = NUISANCE_FOLDS,
-      help = paste("Folds for out-of-fold nuisance predictions within each",
-                   "fit; 1 fits in-sample [default %default].")))
+      help = paste("Lean nuisances only: folds for out-of-fold nuisance",
+                   "predictions within each fit; 1 fits in-sample",
+                   "[default %default].")),
+    optparse::make_option(
+      "--nuisances", type = "character", default = "lean",
+      help = paste("lean (parametric, R/helpers/dvds_lean.R) or forest",
+                   "(DGK's forests; needs --outcomes binary)",
+                   "[default %default].")),
+    optparse::make_option(
+      "--cross-fit-bounds", dest = "cross_fit_bounds", type = "character",
+      default = NA_character_,
+      help = paste("How M7's fold bounds are fitted: complement (fold f's",
+                   "nuisances predicted by forests fitted on its complement;",
+                   "forest only) or fold (fold f fitted on its own)",
+                   "[default: complement with forests, fold with lean].")))
   args <- parse_args(argv, extra_options = extra,
                      default_out_dir = DEFAULT_OUT_DIR)
+  nuisance <- nuisance_settings(args)
+  args$out_dir <- nuisance$out_dir
   cfg <- make_config(args)
+  if (nuisance$nuisances == "forest" && !identical(cfg$outcomes, "binary")) {
+    stop(sprintf("forest nuisances need --outcomes binary, got %s",
+                 paste(cfg$outcomes, collapse = ", ")))
+  }
+  cfg$nuisances <- nuisance$nuisances
+  cfg$cross_fit_bounds <- nuisance$cross_fit_bounds
   if (args$folds < 2) stop(sprintf("folds must be >= 2, got %d", args$folds))
   smallest <- min(floor(cfg$n / args$folds))
   if (smallest < MIN_FOLD_SIZE) {
@@ -131,12 +204,82 @@ simulate_replicate_quick <- function(rep, cfg, progress) {
 }
 
 
+#' Forest fits of study k on its full sample, fold A and fold B, drawn and
+#' fitted exactly as in simulate_replicate() of R/causal_sim.R.
+split_fits_forest <- function(study, k, rep, cfg) {
+  folds <- split_folds(cfg$n[k], cfg$frac_a)
+  samples <- list(full = study, fold_a = subset_study(study, folds$a),
+                  fold_b = subset_study(study, folds$b))
+  rows <- lapply(FITS, function(fit) {
+    est <- dvds_bounds(samples[[fit]], cfg$lambdas[[k]], cfg$num_threads,
+                       cfg$outcomes)
+    data.frame(rep = rep, study = k, fit = fit, est)
+  })
+  do.call(rbind, rows)
+}
+
+
+#' Forest fits of study k for M7: for each cross-fitting fold f, bounds of
+#' its complement (cf_train_f, which give the weights) and of fold f
+#' (cf_held_f), as set by cfg$cross_fit_bounds.
+cross_fits_forest <- function(study, k, rep, cfg) {
+  labels <- cross_fit_labels(cfg$n[k], cfg$folds)
+  rows <- lapply(seq_len(cfg$folds), function(f) {
+    held <- subset_study(study, which(labels == f))
+    train <- subset_study(study, which(labels != f))
+    if (cfg$cross_fit_bounds == "complement") {
+      est <- dvds_bounds_train_test(train, held, cfg$lambdas[[k]],
+                                    cfg$num_threads, cfg$outcomes)
+    } else {
+      est <- list(train = dvds_bounds(train, cfg$lambdas[[k]],
+                                      cfg$num_threads, cfg$outcomes),
+                  test = dvds_bounds(held, cfg$lambdas[[k]], cfg$num_threads,
+                                     cfg$outcomes))
+    }
+    rbind(data.frame(rep = rep, study = k, fit = sprintf("cf_train_%d", f),
+                     est$train),
+          data.frame(rep = rep, study = k, fit = sprintf("cf_held_%d", f),
+                     est$test))
+  })
+  do.call(rbind, rows)
+}
+
+
+#' Forest DVDS estimates for one replicate.
+#'
+#' Full, fold A and fold B of both studies are fitted first, in the order of
+#' R/causal_sim.R: grf draws its seeds from R's random-number stream, so
+#' these fits equal that script's for the same seed and settings. Only then
+#' are the cross-fitting folds drawn and fitted.
+#'
+#' @return data.frame of dvds_bounds() rows with rep, study and fit.
+simulate_replicate_forest <- function(rep, cfg, progress) {
+  studies <- Map(simulate_study, cfg$n, cfg$noise_scale,
+                 cfg$binary_denominator)
+  split_rows <- lapply(seq_along(studies), function(k) {
+    split_fits_forest(studies[[k]], k, rep, cfg)
+  })
+  cross_rows <- lapply(seq_along(studies), function(k) {
+    cross_fits_forest(studies[[k]], k, rep, cfg)
+  })
+  progress(message = sprintf("rep %d/%d", rep, cfg$reps))
+  do.call(rbind, c(split_rows, cross_rows))
+}
+
+
 #' Runs every replicate in parallel behind one progress bar.
 #'
 #' @return data.frame with one row per (rep, study, fit, outcome, Lambda).
 run_simulation_quick <- function(cfg) {
-  set_backend(cfg)
+  # grf threads per forest fit (forest nuisances only).
+  cfg$num_threads <- set_backend(cfg)
   on.exit(future::plan(future::sequential), add = TRUE)
+  forest <- cfg$nuisances == "forest"
+  replicate_fit <- if (forest) {
+    simulate_replicate_forest
+  } else {
+    simulate_replicate_quick
+  }
   seeds <- replicate_seeds(cfg$seed, cfg$reps)
   if (!requireNamespace("progress", quietly = TRUE)) {
     stop("package 'progress' is required; run renv::restore()")
@@ -147,8 +290,9 @@ run_simulation_quick <- function(cfg) {
   results <- progressr::with_progress(handlers = bar, enable = TRUE, {
     progress <- progressr::progressor(steps = cfg$reps)
     future.apply::future_lapply(
-      seq_len(cfg$reps), simulate_replicate_quick, cfg = cfg,
-      progress = progress, future.seed = seeds, future.chunk.size = 1)
+      seq_len(cfg$reps), replicate_fit, cfg = cfg, progress = progress,
+      future.seed = seeds, future.chunk.size = 1,
+      future.packages = if (forest) "grf" else NULL)
   })
   do.call(rbind, results)
 }
@@ -303,7 +447,9 @@ run_sanity_checks_quick <- function(estimates, summary, single, alpha) {
                  check_method_valid(summary, alpha, M8),
                  check_method_valid(summary, alpha, M9),
                  check_method_valid(summary, alpha, M7))
-  cat("\nSanity checks (the cross-fit check may fail at ties, as in the toy)\n")
+  cat(paste("\nSanity checks (the cross-fit check may fail at ties, as in",
+            "the toy; with forests at k = 15, study 1 is known to undercover",
+            "its own band, as in the forest run behind Table 5)\n"))
   for (check in checks) {
     cat(sprintf("[%s] %s: %s\n", if (check$ok) "PASS" else "FAIL",
                 check$name, check$detail))
@@ -315,19 +461,36 @@ run_sanity_checks_quick <- function(estimates, summary, single, alpha) {
 
 
 # ----------------------------- output ------------------------------
+#' One line describing the nuisance models and M7's fold bounds.
+nuisance_description <- function(cfg) {
+  if (cfg$nuisances == "lean") {
+    return(sprintf(paste("nuisances: parametric, true functional forms",
+                         "(R/helpers/dvds_lean.R), out of fold with %d",
+                         "folds | cross-fit bounds: %s"),
+                   cfg$nuisance_folds, cfg$cross_fit_bounds))
+  }
+  sprintf(paste("nuisances: DGK's forests (dvds_sim.R lines 29-42),",
+                "out of bag | cross-fit bounds: %s"), cfg$cross_fit_bounds)
+}
+
+
 #' Records the command, settings, run times and software versions.
 write_run_info_quick <- function(cfg, times, path) {
   packages <- c("future", "future.apply", "progressr", "optparse")
+  if (cfg$nuisances == "forest") packages <- c("grf", packages)
   versions <- vapply(packages, function(p) {
     as.character(utils::packageVersion(p))
   }, character(1))
+  estimator <- if (cfg$nuisances == "forest") {
+    "estimator and DGP code, unmodified"
+  } else {
+    "dvds.binary(), unmodified"
+  }
   lines <- c(
     sprintf("date: %s", format(times$start, "%Y-%m-%d %H:%M")),
     sprintf("git: %s", git_hash()),
-    sprintf("DGK commit: %s (dvds.binary(), unmodified)", DGK_COMMIT),
-    sprintf(paste("nuisances: parametric, true functional forms",
-                  "(R/helpers/dvds_lean.R), out of fold with %d folds"),
-            cfg$nuisance_folds),
+    sprintf("DGK commit: %s (%s)", DGK_COMMIT, estimator),
+    nuisance_description(cfg),
     sprintf("command: Rscript R/causal_sim_quick.R %s",
             paste(commandArgs(trailingOnly = TRUE), collapse = " ")),
     sprintf("seed: %d | reps: %d | n: %s | frac_a: %g | folds: %d | alpha: %g",
