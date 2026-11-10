@@ -12,12 +12,17 @@ Outputs, in src/outputs/toy_sim/ (or --out-dir):
         intersection CIs dashed (M1 naive, M6 calibrated, M8 CLR), convex
         CIs solid (M3 split, M7 cross-fit, M9 CLR); grey band: nominal
         +/- 2 binomial MC s.e. Sized for the 6.0 in PMLR text width.
+    joint_coverage_naive_r<ratios>.pdf  joint coverage (%) of the true band
+        over (g_L, g_U) for the naive intersection CI (M1), one heatmap per
+        ratio r in a row; one colour scale for all panels, centred at the
+        nominal level. Sized for the 6.0 in PMLR text width.
 """
 
 import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import pandas as pd
 
 from src import toy_sim
@@ -38,6 +43,46 @@ PAPER_LABELS = {
     toy_sim.M7: "Convex, cross-fit",
     toy_sim.M9: "Convex, CLR",
 }
+HEATMAP_FIGSIZE = (6.0, 2.4)
+HEATMAP_FONT_SIZE = 6.0
+
+
+def plot_naive_coverage_heatmaps(
+    df: pd.DataFrame,
+    ratios: Sequence[float],
+    cfg: toy_sim.ToyConfig,
+    out_path: Path,
+) -> None:
+    """Joint coverage heatmaps of the naive intersection CI, one per ratio r.
+
+    Coverage is in percent so the values fit the cells. All panels share one
+    colour scale, centred at the nominal level, so colours compare across r.
+    """
+    mats = [
+        100 * toy_sim_plots.pivot_cells(df, toy_sim.M1, r, "cov_joint",
+                                        cfg.gaps)
+        for r in ratios
+    ]
+    nominal = 100 * (1 - cfg.alpha)
+    colour_norm = toy_sim_plots.centred_norm(mats, nominal)
+    font_size = toy_sim_plots.PAPER_FONT_SIZE
+    # Constrained layout keeps the margins small, so the cells are wide
+    # enough for their values at the 6.0 in text width.
+    fig, axes = plt.subplots(1, len(ratios), figsize=HEATMAP_FIGSIZE,
+                             layout="constrained", squeeze=False)
+    for j, (ax, mat, r) in enumerate(zip(axes[0], mats, ratios)):
+        im = toy_sim_plots.draw_heatmap(
+            ax, mat, colour_norm, "{:.1f}", cfg.gaps, title=f"$r = {r:g}$",
+            ylabel=j == 0, annot_fontsize=HEATMAP_FONT_SIZE,
+            label_fontsize=font_size, title_fontsize=font_size + 1,
+        )
+        if j > 0:  # panels share the g_L axis; label it once
+            ax.tick_params(labelleft=False)
+    cbar = fig.colorbar(im, ax=axes, shrink=0.85, pad=0.02)
+    cbar.set_label("Joint coverage, %", fontsize=font_size)
+    cbar.ax.tick_params(labelsize=font_size)
+    fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
 
 
 def coverage_summary(
@@ -81,6 +126,10 @@ def main() -> None:
     print(coverage_summary(df, args.ratios, cfg.gaps).round(4)
           .to_string(index=False))
     print(f"Written to {fig_path}")
+
+    heatmap_path = out_dir / f"joint_coverage_naive_r{ratios}.pdf"
+    plot_naive_coverage_heatmaps(df, args.ratios, cfg, heatmap_path)
+    print(f"Written to {heatmap_path}")
 
 
 if __name__ == "__main__":

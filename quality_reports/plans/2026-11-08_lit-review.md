@@ -1,23 +1,24 @@
 # Plan: literature review (related work) for the paper
 
-Date: 2026-11-08. Status: **draft, awaiting approval**. Nothing has been
-written into the paper yet.
+Date: 2026-11-08, revised 2026-11-09. Status: **draft, awaiting approval**.
+Nothing has been written into the paper yet.
+
+Revision of 2026-11-09: the user supplied an example of a CLeaR related-work
+section (stored verbatim in
+`quality_reports/reviews/2026-11-09_clear-related-work-example.md`). The plan
+now drafts the CLeaR version first, in that example's structure: one flowing
+section that narrows from broad to closest work, of about one page. The
+reference tables of Parts 1-3 below are kept as the pool to draw from; the
+section "CLeaR cut" says which references the first draft uses.
 
 ## Goal
 
-A related-work section of about four or five paragraphs, in three parts:
-
-1. intersection-based partial identification and sensitivity analysis (two
-   paragraphs);
-2. the winner's curse and inference on intersection bounds (one or two
-   paragraphs);
-3. data fusion for estimation, focusing on convex combinations (one short
-   paragraph).
-
-Each part ends with a sentence placing our work against it. The CLeaR version
-(due 16 Nov 2026, separate Overleaf project, copied by hand) will probably need
-a shorter cut, so every paragraph is planned with a core set of references and
-an optional set.
+A related-work section for the CLeaR paper (due 16 Nov 2026, separate Overleaf
+project, copied by hand): Section 2, after the introduction, about one page of
+the 12-page main text, five paragraphs and about 22 references. It narrows from
+broad to close work and ends by naming the closest work (see "CLeaR cut"
+below). A longer version for a journal can later add the optional references
+of Parts 1-3.
 
 ## Where it goes
 
@@ -26,14 +27,113 @@ an optional set.
   `df_sensitivity.tex` (three lines of notes in comments, on Yu et al.,
   Wang et al. and Lanners et al.). None is input in `compiled.tex`, and
   `Introduction/introduction.tex` is empty.
-- Proposal:
-  - Part 1 goes in `partial_identification.tex`, absorbing the notes in
-    `df_sensitivity.tex`.
-  - Part 2 goes in a new file, `winners_curse.tex`.
-  - Part 3 goes in `data_fusion.tex`.
-  - Add `\section{Related Work}` with the three `\input`s to `compiled.tex`,
-    after the abstract and before "Convex Combination". This needs your OK
-    (open question 1).
+- Proposal (changed 2026-11-09): the example is one continuous section, so
+  write it as one new file, `Literature Review/related_work.tex`, absorbing
+  the notes in `df_sensitivity.tex`. That is also the easiest file to copy into
+  the CLeaR project. The three existing files stay untouched; deleting them
+  is your call.
+- Add `\section{Related Work}` with that `\input` to `compiled.tex`, after the
+  abstract and before "Convex Combination", where the introduction will later
+  go. This needs your OK (open question 1).
+
+## Model: the CLeaR example
+
+What the example does, and what we take from it. Its wording is not to be
+reused.
+
+| The example | Our version |
+|---|---|
+| Opens with the broad problem (HTE and CATE estimation) in a few sentences, with one or two citations per family of methods | Paragraph 1: partial identification and sensitivity analysis bands, three or four sentences |
+| Then the neighbouring area (fusion for the ATE), pointing to reviews (Lin et al. 2024; Colnet et al. 2024) rather than listing papers, and flags related work as "outside the immediate scope" | Paragraph 2: fusion under point identification, cited through the same two reviews; falsification and bias-bounding work flagged as outside our scope |
+| Then its own focus, sorted into "three broad lines of work" (debiasing, test-then-pool, dynamic borrowing), one or two sentences per paper | Paragraph 3: fusion for partial identification, in named lines of work |
+| Each paper gets what it does plus a limitation relative to the paper's goal ("relying on the strong assumption of linear confounding") | The same, but every stated limitation must be checked against the source (citation-checker), never inferred from the abstract |
+| Then the lineage of its technique (multi-task GPs), ending "However, these approaches focus on single-source settings. In contrast, our work ..." | Paragraph 4: inference on intersection bounds, kept short, ending with the same kind of contrast: that literature does not focus on combining data sources |
+| Ends with "Our approach is most similar to concurrent work ..." | Paragraph 5 (short): our contribution against the closest work, Chernozhukov, Lee & Rosen (2013), Lanners et al. (2025) and Yu et al. (2025) (chosen by the user, 2026-11-09) |
+| No subsections, no bold headings, author-year citations, about 25 references, about 1-1.25 pages single-column | Connected prose, `\citet`/`\citep`, British English, about 22 references |
+
+Overlap with our pool: the example also cites Colnet et al. (2024), Lin et al.
+(2024), Demirel et al. (2024), Kallus et al. (2018), Yang et al. (2023,
+test-then-pool) and Fawkes et al. (2025). Its Fawkes et al. (2025) may not be
+the paper in our `.bib` (`fawkes_hardness_2025-1`); check before citing it.
+Its Lin et al. (2025) on Bayesian dynamic borrowing is not identified or
+checked; leave it out unless you want that line of work named.
+
+## CLeaR cut: paragraph plan and core references
+
+Status keys as in the next section. Anything not listed here stays in the pool
+for the longer version.
+
+1. **Bands from assumptions** (3-4 sentences). Relaxing an untestable
+   assumption gives a band indexed by a sensitivity parameter, and different
+   datasets or assumptions give different valid bands for the same quantity.
+   Core: Manski (1990) V; Rosenbaum (1987) bib; Dorn, Guo & Kallus (2025) bib
+   (DVDS, used in our causal simulation); one of Nie, Imbens & Wager (2021) or
+   Dahabreh et al. (2023) bib (sensitivity for transport).
+2. **Fusion under point identification** (one paragraph, neighbouring area,
+   and the methodology we borrow: weighting estimators from different
+   sources). Most RCT and OS fusion targets a point-identified effect: reviews Colnet et
+   al. (2024) and Lin, Tarp & Evans (2024) bib. Lines of work, one sentence
+   each: bias correction, Kallus, Puli & Shalit (2018) Z; test-then-pool,
+   Yang, Gao, Zeng & Wang (2023) Z; weighting and shrinkage between an
+   unbiased and a biased estimator, Rosenman et al. (2023) Z, Oberst et al.
+   (2023) V, Yang, Lin, Athey, Jordan & Imbens (2025) V. Their limitation for
+   inference: without a bound on the bias, a CI valid for every bias gains
+   little over the unbiased one, Armstrong, Kline & Sun (2025) V, and Lin,
+   Bickel & Ding (2026) V index CIs by such a bound. Outside our scope, one
+   sentence: the RCT used to test or bound the OS's bias, De Bartolomeis et
+   al. (2024) and Hussain et al. (2023) bib.
+3. **Fusion for partial identification** (the focus). Combining an RCT and an
+   OS when neither identifies the effect: Lanners et al. (2025) bib and Yu et
+   al. (2025) bib, one sentence each on what they do (the contrast comes in
+   paragraph 5). Optional: Sakaguchi (2025) V, combining experimental and
+   observational data to sharpen bounds on distributional effects.
+4. **Inference on intersection bounds** (technique lineage; kept short, with
+   econometrics only where needed, user 2026-11-09). The estimated max or min
+   of bounds is biased inwards, a winner's curse: Andrews, Kitagawa &
+   McCloskey (2024) bib. CIs for partially identified parameters: Imbens &
+   Manski (2004) bib. Precision-corrected intersection bounds: Chernozhukov,
+   Lee & Rosen (2013) bib. Sample splitting and cross-fitting: Chernozhukov et
+   al. (2018) V. End with the contrast (user's framing, 2026-11-09): this
+   literature corrects inference for the max and min of bounds estimated from
+   one data source, and does not focus on combining data sources (wording to
+   check against CLR before using it).
+5. **Our contribution and the closest work** (3-4 sentences). Because our two
+   bands come from independent sources, each valid on its own, every convex
+   combination of their bounds is also valid. So the weighting methodology of
+   paragraph 2 can be used to pool the studies and narrow the CI, and the only
+   cost is the data-dependent weight. We handle it by splitting (M3),
+   cross-fitting (M7) or a sup over all weights (M9). Closest (user,
+   2026-11-09), one difference each, taken from Part 1b and
+   `quality_reports/reviews/2026-11-07_lit-notes-lanners-yu.md`:
+   - **Chernozhukov, Lee & Rosen (2013):** they correct the max and min of
+     the given bounds; we also combine them. Our CLR intersection (M8) is
+     theirs without the adaptive inequality selection step, and the convex
+     CLR CI (M9) extends it to the sup over all convex combinations, pooling
+     variance across the two estimators.
+   - **Lanners et al. (2025):** their weights smooth the max and min (the
+     Boltzmann operator) so that an influence function exists, rather than to
+     narrow the CI. The weights act pointwise in the covariates, and the
+     inference is for the smoothed, wider target at a fixed smoothing
+     parameter.
+   - **Yu et al. (2025):** they combine the two studies' sensitivity p-values
+     with Fisher's method after a triplet matching design, which needs
+     unit-level data on shared covariates. Our CLR methods need only each
+     study's bound estimates and standard errors, and the split needs
+     unit-level data within each study only.
+
+About 22 references, all marked bib, Z or V, so none needs checking from
+memory.
+
+Dropped from the CLeaR cut on 2026-11-09 and kept in the pool: Han &
+McCloskey (2024), a different target (see Part 2b); the econometric
+intersection and data-combination references (Manski & Pepper 2000; Fan,
+Sherman & Shum 2014; Hirano & Porter 2012; Cox 1975); Levis et al. (2023).
+One caveat for the contrast in paragraph 4: econometrics does have a
+data-combination literature (Cross & Manski 2002; Ridder & Moffitt 2007; Fan,
+Sherman & Shum 2014). It concerns identification when no dataset observes all
+the variables, not inference on bands from sources with their own
+assumptions. So the paper should not say that no work combines data sources
+for partial identification.
 
 ## Key to reference status
 
@@ -44,6 +144,9 @@ an optional set.
 - **M**: from memory, not checked this session. Verify before citing.
 
 Papers you may have missed are marked **[new]**.
+
+Parts 1-3 below are the full reference pool. The CLeaR draft uses only the
+core references listed under "CLeaR cut" above.
 
 ---
 
@@ -141,7 +244,7 @@ over to ours: M1 is the naive min and undercovers (0.898 at r = 1, g = 0).
 | Bugni, Gao, Obradović & Velez (2024), arXiv 2407.20386 | V **[new]** (optional) | power of these CIs; more efficient bound estimators need not give more power for one of them |
 | **Chernozhukov, Lee & Rosen (2013)** | bib | precision-corrected bounds, half-median-unbiased estimates, adaptive inequality selection; M8 and M9 are this without the selection step |
 | Romano, Shaikh & Wolf (2014), Econometrica 82; Andrews, Roth & Pakes (2023), REStud 90 | V **[new]** (optional) | moment-inequality inference (two-step and hybrid tests) |
-| **Han & McCloskey (2024), arXiv 2403.00422** | V **[new]** | post-selection inference for interval-identified parameters. Their running example shows the estimated max of two bounds is not normal; conditional, projection and hybrid CIs |
+| Han & McCloskey (2024), arXiv 2403.00422 | V **[new]** (optional, not in the CLeaR cut) | Inference on the identified interval of a parameter *selected from data*, e.g. the treatment with the largest estimated lower bound; conditional, projection and hybrid CIs. Each bound is a max or min of functions linear in a reduced-form parameter (Assumption 3.1). With the parameter fixed in advance their setting reduces to ordinary intersection bounds, which they say is not of primary interest (Section 6). Checked 2026-11-09. A different target from ours, so not close work (user, 2026-11-09) |
 | McCloskey (2024), Biometrika 111 | V **[new]** (optional) | hybrid CIs after model selection |
 | Cox (1975), Biometrika 62 | M **[new]** | sample splitting for valid inference |
 | Chernozhukov et al. (2018), Econometrics J. 21 | V **[new]** | cross-fitting (the origin of M7) |
@@ -151,7 +254,7 @@ and each pays differently:
 - sample splitting pays in sample size (Cox; DML);
 - simultaneous critical values pay in the critical value (CLR; PoSI);
 - conditional or hybrid inference pays in complexity and instability
-  (AKM; McCloskey; Han & McCloskey);
+  (AKM; McCloskey);
 - smoothing pays in a wider target (Lanners).
 
 Our contribution covers the continuum of convex combinations between the two
@@ -226,27 +329,38 @@ a point with a CI for a band:
 1. You add the papers you want to Zotero (zotero-cli is read-only here),
    using the identifiers below, then re-export the `.bib`. Also remove the
    duplicate `horowitz_nonparametric_2000-1`, and fix `yu_using_nodate` to
-   `yu_using_2025`. I then check the new keys against the draft.
-2. Draft the three files in connected prose: British English, `\citet` and
-   `\citep`, Methods notation (omega_0, omega_1, omega^ast), no "first" claims.
+   `yu_using_2025`. I then check the new keys against the draft. For CLeaR,
+   only the core references of "CLeaR cut" are needed.
+2. Draft `related_work.tex` following "CLeaR cut", in connected prose:
+   British English, `\citet` and `\citep`, Methods notation (omega_0, omega_1,
+   omega^ast), no "first" claims, one or two sentences per paper (what it does
+   and its limitation for our problem).
 3. Add the section to `compiled.tex` (once you agree where), compile, and
-   check for undefined citations.
-4. Run the citation-checker agent on the new section, to check each claim
-   against its source; then proofread.
-5. Prepare a condensed version for CLeaR, for you to copy across.
+   check for undefined citations and its length (target about one page in the
+   CLeaR layout, so about 1.3 pages at 12pt with 1in margins; to be checked
+   once you copy it across).
+4. Run the citation-checker agent on the new section, to check each claim,
+   and especially each stated limitation, against its source; then
+   proofread.
+5. You copy it into the CLeaR project. A longer journal version can add the
+   optional references later.
 
 Also: `Results/Non-Causal Toy/toy_example.tex:137` uses a bare `\cite`, which
 should be `\citet`. Fix it in the same pass.
 
 ## Open questions
 
-1. Placement: a separate "Related Work" section after the abstract, or folded
-   into the Introduction once that is written?
-2. Length: what is the CLeaR page budget? That decides how many of the
-   optional references survive.
-3. Keep the econometrics data-combination references (recommended: they are
-   what make a "first" claim untenable) and the falsification sentence
-   (optional)?
+1. Placement: a separate "Related Work" section after the introduction, as in
+   the CLeaR example (recommended), or folded into the introduction?
+2. Length: the CLeaR main text is at most 12 pages. Is about one page for
+   related work right, as in the example?
+3. Keep the falsification sentence in paragraph 2 (optional)?
+4. One file, `related_work.tex`, instead of the three planned before
+   (recommended, see "Where it goes")?
+
+Decided 2026-11-09: keep the econometric literature to a minimum (CLR,
+Imbens & Manski, AKM); the contrast with it is that it does not focus on
+combining data sources for partial identification.
 
 ## Papers to add to Zotero
 
@@ -256,7 +370,7 @@ journal version exists, it is noted; you may prefer to add that instead.
 
 | arXiv ID | Paper |
 |---|---|
-| 2403.00422 | Han & McCloskey, Inference for interval-identified parameters selected from an estimated set |
+| 2403.00422 | Han & McCloskey, Inference for interval-identified parameters selected from an estimated set (optional; not needed for CLeaR) |
 | 2305.14265 | Armstrong, Kline & Sun, Adapting to misspecification (journal version: Econometrica 93(6), 2025) |
 | 2602.16310 | Lin, Bickel & Ding, Introducing the b-value |
 | 2205.10467 | Oberst et al., Understanding the risks and rewards of combining unbiased and possibly biased estimators |
