@@ -1,16 +1,22 @@
-"""Causal-simulation figure: each method's CI width over the per-cell best.
+"""Causal-simulation figure: each method's CI width over a per-cell reference.
 
 Reads summary_full.csv written by R/causal_sim_quick.R; does not rerun it.
-A cell is a pair (Lambda_1, Lambda_2). In each cell the reference is the
-narrowest CI among the methods with valid joint coverage there
-(mc_metrics.width_relative_to_best); a method's box shows its ratios over
-the selected cells where it is valid.
+A cell is a pair (Lambda_1, Lambda_2). With --reference best (the default)
+the reference in each cell is the narrowest CI among the methods with valid
+joint coverage there (mc_metrics.width_relative_to_best); with --reference
+truth it is the cell's true band width (mc_metrics.width_relative_to_truth).
+A method's box shows its ratios over the selected cells where it is valid.
 
 Usage, from the repo root:
     python -m src.latex.causal_sim_paper_figs --summary <summary_full.csv>
-        --outcome continuous|binary [--lambda-1-range LO HI]
-        [--lambda-2-range LO HI] [--max-gap-se G] [--hide dataset2]
+        --outcome continuous|binary [--reference best|truth]
+        [--lambda-1-range LO HI | --lambda-1-interval '(LO,HI]']
+        [--lambda-2-range LO HI | --lambda-2-interval '(LO,HI]']
+        [--max-gap-se G] [--hide dataset1 dataset2]
         [--log-x] [--suffix _name] [--macro-prefix causal] [--alpha 0.05]
+An --interval is written in interval notation, ( or [ at each end for an
+open or closed end, and is shown as given in the panel title; a --range is
+closed and the title shows the selected cells' smallest and largest values.
 Outputs, beside the summary (or in --out-dir):
     width_ratio_box_<outcome><suffix>.pdf    one box per method
     width_ratio_stats_<outcome><suffix>.csv  per method: selected cells,
@@ -24,8 +30,10 @@ Outputs, beside the summary (or in --out-dir):
 """
 
 import argparse
+import re
 from collections.abc import Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -78,24 +86,77 @@ CLI_NAMES = {"dataset1": DATASET_1, "dataset2": DATASET_2,
 CELL_COLUMNS = ("lambda_1", "lambda_2")
 UNDERCOVER_SES = toy_sim_slide_figs.UNDERCOVER_SES
 LAMBDA_TOL = 1e-9  # Lambda values are read back from CSV
+# Ratio-axis label for each --reference.
+REFERENCE_LABELS = {
+    "best": "CI width / narrowest valid CI width in the same cell",
+    "truth": "CI width / true band width",
+}
+INTERVAL_PATTERN = re.compile(r"^([\[(])([^,]+),([^,]+)([\])])$")
+
+
+class Interval(NamedTuple):
+    """An interval of Lambda values; each end open or closed."""
+
+    low: float
+    high: float
+    low_open: bool = False
+    high_open: bool = False
+
+    def contains(self, values: pd.Series) -> pd.Series:
+        """Whether each value lies in the interval, up to LAMBDA_TOL."""
+        if self.low_open:
+            above = values > self.low + LAMBDA_TOL
+        else:
+            above = values >= self.low - LAMBDA_TOL
+        if self.high_open:
+            below = values < self.high - LAMBDA_TOL
+        else:
+            below = values <= self.high + LAMBDA_TOL
+        return above & below
+
+    def latex(self) -> str:
+        """The interval in LaTeX notation, e.g. (1, 2]."""
+        left = "(" if self.low_open else "["
+        right = ")" if self.high_open else "]"
+        return f"{left}{self.low:g}, {self.high:g}{right}"
+
+
+def parse_interval(text: str) -> Interval:
+    """An Interval from notation such as '(1,2]' or '[2, 4]'.
+
+    Raises:
+        argparse.ArgumentTypeError: If text is not an interval with low <=
+            high.
+    """
+    match = INTERVAL_PATTERN.match(text.replace(" ", ""))
+    if match is None:
+        raise argparse.ArgumentTypeError(
+            f"expected an interval such as '(1,2]', got {text!r}")
+    try:
+        low, high = float(match[2]), float(match[3])
+    except ValueError as err:
+        raise argparse.ArgumentTypeError(
+            f"interval ends must be numbers, got {text!r}") from err
+    if low > high:
+        raise argparse.ArgumentTypeError(
+            f"interval needs low <= high, got {text!r}")
+    return Interval(low, high, match[1] == "(", match[4] == ")")
 
 
 def select_cells(
     df: pd.DataFrame,
-    lambda_1_range: Sequence[float] | None,
-    lambda_2_range: Sequence[float] | None,
+    lambda_1_interval: Interval | None,
+    lambda_2_interval: Interval | None,
 ) -> pd.DataFrame:
-    """Rows whose Lambda_1 and Lambda_2 lie in the given closed ranges.
+    """Rows whose Lambda_1 and Lambda_2 lie in the given intervals.
 
-    A range of None keeps every value.
+    An interval of None keeps every value.
     """
     keep = pd.Series(True, index=df.index)
-    for column, bounds in zip(CELL_COLUMNS, (lambda_1_range, lambda_2_range)):
-        if bounds is None:
-            continue
-        low, high = bounds
-        keep &= ((df[column] >= low - LAMBDA_TOL)
-                 & (df[column] <= high + LAMBDA_TOL))
+    for column, interval in zip(CELL_COLUMNS,
+                                (lambda_1_interval, lambda_2_interval)):
+        if interval is not None:
+            keep &= interval.contains(df[column])
     return df[keep]
 
 
@@ -152,13 +213,24 @@ def ratio_stats(ratios: pd.DataFrame, methods: Sequence[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def panel_title(outcome: str, cells: pd.DataFrame) -> str:
-    """The outcome and the ranges of Lambda_1 and Lambda_2 of the cells."""
-    return (f"{outcome.capitalize()} outcome: "
-            rf"$\Lambda_1 \in [{cells.lambda_1.min():g}, "
-            rf"{cells.lambda_1.max():g}]$, "
-            rf"$\Lambda_2 \in [{cells.lambda_2.min():g}, "
-            rf"{cells.lambda_2.max():g}]$")
+def panel_title(
+    outcome: str,
+    cells: pd.DataFrame,
+    intervals: Sequence[Interval | None] = (None, None),
+) -> str:
+    """The outcome and the Lambda_1 and Lambda_2 values of the cells.
+
+    For each Lambda, an interval given on the command line is shown as
+    given; otherwise the cells' smallest and largest values, as a closed
+    interval.
+    """
+    parts = []
+    for k, (column, interval) in enumerate(zip(CELL_COLUMNS, intervals),
+                                           start=1):
+        if interval is None:
+            interval = Interval(cells[column].min(), cells[column].max())
+        parts.append(rf"$\Lambda_{k} \in {interval.latex()}$")
+    return f"{outcome.capitalize()} outcome: " + ", ".join(parts)
 
 
 def caption_macros(
@@ -187,12 +259,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "R/causal_sim_quick.R.")
     parser.add_argument("--outcome", choices=("continuous", "binary"),
                         required=True, help="Outcome to plot.")
-    parser.add_argument("--lambda-1-range", type=float, nargs=2, default=None,
-                        metavar=("LO", "HI"),
-                        help="Keep cells with Lambda_1 in [LO, HI].")
-    parser.add_argument("--lambda-2-range", type=float, nargs=2, default=None,
-                        metavar=("LO", "HI"),
-                        help="Keep cells with Lambda_2 in [LO, HI].")
+    parser.add_argument("--reference", choices=tuple(REFERENCE_LABELS),
+                        default="best",
+                        help="Denominator of each ratio: the narrowest valid "
+                             "CI in the cell, or the cell's true band width "
+                             "[default %(default)s].")
+    for k in (1, 2):
+        group = parser.add_mutually_exclusive_group()
+        group.add_argument(f"--lambda-{k}-range", type=float, nargs=2,
+                           default=None, metavar=("LO", "HI"),
+                           help=f"Keep cells with Lambda_{k} in [LO, HI].")
+        group.add_argument(f"--lambda-{k}-interval", type=parse_interval,
+                           default=None, metavar="INTERVAL",
+                           help=f"Keep cells with Lambda_{k} in INTERVAL, "
+                                "e.g. '(1,2]'; shown as given in the title.")
     parser.add_argument("--max-gap-se", type=float, default=None,
                         help="Keep cells whose gap between the true bands "
                              "(smaller end) is at most this many pooled "
@@ -200,7 +280,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--hide", nargs="+", choices=tuple(CLI_NAMES),
                         default=[],
                         help="Methods left out of the figure; they stay in "
-                             "each cell's reference set and in the stats.")
+                             "each cell's reference set (--reference best) "
+                             "and in the stats.")
     parser.add_argument("--log-x", action="store_true",
                         help="Logarithmic ratio axis.")
     parser.add_argument("--suffix", default="",
@@ -225,14 +306,23 @@ def main() -> None:
     args = parse_args()
     methods = list(METHOD_LABELS)
     summary = pd.read_csv(args.summary)
-    df = select_cells(summary[summary.outcome == args.outcome],
-                      args.lambda_1_range, args.lambda_2_range)
+    # A closed --range selects like an interval but is titled by its cells.
+    selection = [
+        Interval(*closed) if closed is not None else interval
+        for closed, interval in ((args.lambda_1_range, args.lambda_1_interval),
+                                 (args.lambda_2_range, args.lambda_2_interval))
+    ]
+    titled = (args.lambda_1_interval, args.lambda_2_interval)
+    df = select_cells(summary[summary.outcome == args.outcome], *selection)
     if args.max_gap_se is not None:
         df = near_tie_cells(df, args.max_gap_se, args.alpha)
     if df.empty:
         raise ValueError(f"No {args.outcome} cells in the selected ranges")
-    ratios = mc_metrics.width_relative_to_best(
-        df, methods, CELL_COLUMNS, 1 - args.alpha, UNDERCOVER_SES)
+    relative = (mc_metrics.width_relative_to_truth
+                if args.reference == "truth"
+                else mc_metrics.width_relative_to_best)
+    ratios = relative(df, methods, CELL_COLUMNS, 1 - args.alpha,
+                      UNDERCOVER_SES)
     out_dir = args.summary.parent if args.out_dir is None else args.out_dir
     stem = f"{args.outcome}{args.suffix}"
     fig_path = out_dir / f"width_ratio_box_{stem}.pdf"
@@ -240,7 +330,8 @@ def main() -> None:
     shown = [m for m in methods if m not in hidden]
     causal_sim_plots.plot_width_ratio_boxes(
         ratios, shown, [METHOD_LABELS[m] for m in shown], METHOD_COLOURS,
-        panel_title(args.outcome, df), fig_path, log_x=args.log_x)
+        panel_title(args.outcome, df, titled), fig_path, log_x=args.log_x,
+        xlabel=REFERENCE_LABELS[args.reference])
     ratio_table = ratio_stats(ratios, methods)
     stats_path = out_dir / f"width_ratio_stats_{stem}.csv"
     ratio_table.to_csv(stats_path, index=False)
@@ -251,8 +342,9 @@ def main() -> None:
         + caption_macros(ratio_table, args.outcome, args.macro_prefix))
     print(ratio_table.round(3).to_string(index=False))
     # A hidden method that is never the narrowest valid CI leaves every
-    # shown ratio unchanged, so a caption need not mention it.
-    for method in sorted(hidden):
+    # shown ratio unchanged, so a caption need not mention it. Against the
+    # truth, hiding a method never changes another's ratio.
+    for method in sorted(hidden) if args.reference == "best" else []:
         best = int((ratios[ratios.method == method].ratio == 1).sum())
         print(f"Hidden method {method!r} is the narrowest valid CI in {best} "
               f"cells" + ("" if best == 0 else "; the caption must say so"))

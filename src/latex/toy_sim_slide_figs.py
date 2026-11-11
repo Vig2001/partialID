@@ -4,7 +4,8 @@ Does not rerun the simulation: run `python -m src.toy_sim` first.
 
 Usage, from the repo root:
     python -m src.latex.toy_sim_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
-        [--table-ratios 1 2 5] [--with-calibrated | --by-dataset | --clr]
+        [--table-ratios 1 2 5]
+        [--with-calibrated | --by-dataset | --fused | --clr]
         [--with-oracle] [--with-mcse] [--metric ci|band|ends]
 Outputs, in src/outputs/toy_sim/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, naive intersection vs split
@@ -14,6 +15,8 @@ Outputs, in src/outputs/toy_sim/:
         dataset (dataset 1), M6, M3, M7, M8, M9, for the ratios given (e.g.
         _r1-2-3); with --with-oracle, an M2 (oracle) column is added last
         and the name ends _oracle, or
+    width_coverage_fused_r<ratios>.tex  the same without dataset 1: M6,
+        M3, M7, M8, M9 (fused CIs only), with --with-oracle M2 last, or
     width_coverage_clr_r<ratios>.tex  columns M3, M7, M8 (CLR);
     each name gets an _mcse suffix with --with-mcse (MC s.e. of each width
     on a second line in the cell). With --metric band the cells are mean
@@ -21,7 +24,10 @@ Outputs, in src/outputs/toy_sim/:
     instead of width_coverage_. With --metric ends each method has two
     cells, the mean estimated ends L_hat and U_hat, and the name starts
     band_ends_; an end inside the true band by more than UNDERCOVER_SES
-    MC s.e. is wrapped in \\inward{}, which the paper must define.
+    MC s.e. is wrapped in \\inward{}, which the paper must define. With
+    --metric end_errors the two cells are |L_hat - L| and |U_hat - U|, the
+    distances of the mean ends from the true band's, with the same
+    \\inward{} marking, and the name starts band_end_errors_.
     <table>_macros.tex                 median, min and max MC s.e. in the
         table, as LaTeX macros for the caption: \\toyWidthMcse{Median,Min,Max}
         and \\toyCovMcse{...} (ci), \\toyBandMcse{...} (band), or
@@ -51,6 +57,10 @@ TABLE_METHODS_BY_DATASET = (
 )
 # Paper CI-width table: as above, with the oracle convex CI as a benchmark.
 TABLE_METHODS_BY_DATASET_ORACLE = TABLE_METHODS_BY_DATASET + (toy_sim.M2,)
+# Paper tables since 2026-11-11: the fused CIs only, no single dataset.
+TABLE_METHODS_FUSED = (toy_sim.M6, toy_sim.M3, toy_sim.M7, toy_sim.M8,
+                       toy_sim.M9)
+TABLE_METHODS_FUSED_ORACLE = TABLE_METHODS_FUSED + (toy_sim.M2,)
 # Paper table: the valid convex CIs against the CLR intersection bounds.
 TABLE_METHODS_CLR = (toy_sim.M3, toy_sim.M7, toy_sim.M8)
 # Caption macros: name -> results.csv column of MC s.e.; each name gives
@@ -60,10 +70,13 @@ CAPTION_MACROS = {
     "ci": {"WidthMcse": "width_mcse", "CovMcse": "cov_joint_mcse"},
     "band": {"BandMcse": "band_width_mcse"},
     "ends": {"LowerEndMcse": "bias_L_mcse", "UpperEndMcse": "bias_U_mcse"},
+    "end_errors": {"LowerEndMcse": "bias_L_mcse",
+                   "UpperEndMcse": "bias_U_mcse"},
 }
 # Output name prefix for each table metric.
 TABLE_PREFIXES = {
-    "ci": "width_coverage", "band": "band_width", "ends": "band_ends"
+    "ci": "width_coverage", "band": "band_width", "ends": "band_ends",
+    "end_errors": "band_end_errors",
 }
 MACRO_PREFIX = "toy"
 MACRO_PREFIX_CLR = "toyClr"
@@ -136,6 +149,26 @@ def ends_cells(row: pd.Series, cfg: toy_sim.ToyConfig) -> list[str]:
     return cells
 
 
+def end_error_cells(row: pd.Series) -> list[str]:
+    """|mean L_hat - L| and |mean U_hat - U| against the true band, two cells.
+
+    The absolute value hides the direction, so an end lying inside the true
+    band by more than UNDERCOVER_SES Monte Carlo standard errors is wrapped
+    in \\inward{}, as in ends_cells.
+    """
+    ends = (
+        (row.bias_L, row.bias_L, row.bias_L_mcse),
+        (row.bias_U, -row.bias_U, row.bias_U_mcse),
+    )
+    cells = []
+    for bias, inward_shift, mcse in ends:
+        cell = f"{abs(bias):.3f}"
+        if inward_shift > UNDERCOVER_SES * mcse:
+            cell = rf"\inward{{{cell}}}"
+        cells.append(cell)
+    return cells
+
+
 def table_subset(
     df: pd.DataFrame,
     gaps: Sequence[float],
@@ -183,7 +216,8 @@ def width_table_rows(
     followed by its Monte Carlo standard error. With metric "band" a cell
     is the mean estimated band width; with metric "ends" each method has
     two cells, L_hat and U_hat (see ends_cells), and the paper must define
-    \\inward.
+    \\inward; with metric "end_errors" the two cells are |L_hat - L| and
+    |U_hat - U| (see end_error_cells).
     """
     nominal = 1 - cfg.alpha
     lines = []
@@ -200,6 +234,9 @@ def width_table_rows(
                     continue
                 if metric == "ends":
                     row.extend(ends_cells(result, cfg))
+                    continue
+                if metric == "end_errors":
+                    row.extend(end_error_cells(result))
                     continue
                 macro = TABLE_CELL_MACROS.get(method, "")
                 cell = table_cell(result, nominal, with_mcse)
@@ -230,14 +267,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                          help="Columns M5 (dataset 1, the most precise), "
                               "M6, M3, M7, M8, M9, written to "
                               "width_coverage_datasets_r<ratios>.tex.")
+    columns.add_argument("--fused", action="store_true",
+                         help="Columns M6, M3, M7, M8, M9 (fused CIs only, "
+                              "no single dataset), written to "
+                              "width_coverage_fused_r<ratios>.tex.")
     columns.add_argument("--clr", action="store_true",
                          help="Columns M3, M7, M8 (CLR), written to "
                               "width_coverage_clr_r<ratios>.tex; caption "
                               "macros start \\toyClr.")
     parser.add_argument("--with-oracle", action="store_true",
-                        help="With --by-dataset only: add the oracle convex "
-                             "CI (M2) as the last column, written to a "
-                             "separate _oracle table.")
+                        help="With --by-dataset or --fused only: add the "
+                             "oracle convex CI (M2) as the last column, "
+                             "written to a separate _oracle table.")
     parser.add_argument("--with-mcse", action="store_true",
                         help="Add each mean width's Monte Carlo standard "
                              "error on a second line in its cell, written to "
@@ -247,12 +288,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="Table cells: 'ci' for width (coverage), 'band' "
                              "for the mean estimated band width, 'ends' for "
                              "the mean estimated ends L_hat and U_hat (two "
-                             "cells per method).")
+                             "cells per method), 'end_errors' for their "
+                             "distances from the true band's ends, "
+                             "|L_hat - L| and |U_hat - U|.")
     parser.add_argument("--out-dir", type=Path, default=None,
                         help="Output directory; defaults to the results' one.")
     args = parser.parse_args(argv)
-    if args.with_oracle and not args.by_dataset:
-        parser.error("--with-oracle requires --by-dataset")
+    if args.with_oracle and not (args.by_dataset or args.fused):
+        parser.error("--with-oracle requires --by-dataset or --fused")
     return args
 
 
@@ -275,6 +318,11 @@ def main() -> None:
         table_name = f"datasets_r{ratios}_oracle"
     elif args.by_dataset:
         methods, table_name = TABLE_METHODS_BY_DATASET, f"datasets_r{ratios}"
+    elif args.fused and args.with_oracle:
+        methods = TABLE_METHODS_FUSED_ORACLE
+        table_name = f"fused_r{ratios}_oracle"
+    elif args.fused:
+        methods, table_name = TABLE_METHODS_FUSED, f"fused_r{ratios}"
     elif args.clr:
         methods, table_name = TABLE_METHODS_CLR, f"clr_r{ratios}"
     elif args.with_calibrated:

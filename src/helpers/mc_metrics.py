@@ -102,6 +102,71 @@ def width_relative_to_best(
         ValueError: If a cell lacks one of the methods or has it twice.
     """
     cell_columns = list(cell_columns)
+    out = _valid_widths(df, methods, cell_columns, nominal, undercover_ses)
+    best = (out.width.where(out.valid)
+            .groupby([out[c] for c in cell_columns]).transform("min"))
+    out["ratio"] = (out.width / best).where(out.valid)
+    return _sort_by_cell(out, methods, cell_columns)
+
+
+def width_relative_to_truth(
+    df: pd.DataFrame,
+    methods: Sequence[str],
+    cell_columns: Sequence[str],
+    nominal: float,
+    undercover_ses: float,
+) -> pd.DataFrame:
+    """Each method's mean CI width over the true band width of its cell.
+
+    Validity is as in width_relative_to_best: a method that undercovers in a
+    cell gets no ratio there (NaN). The reference is the cell's true band
+    width (true_band_width), the same for every method, so a ratio of 1
+    would be a CI as narrow as the target band itself.
+
+    Args:
+        df: One row per (cell, method) with the cell columns, method, width,
+            true_band_width, cov_joint and cov_joint_mcse (e.g.
+            summary_full.csv).
+        methods: Methods to compare; rows of other methods are ignored.
+        cell_columns: Columns identifying a cell, e.g. lambda_1, lambda_2.
+        nominal: Nominal joint coverage, 1 - alpha.
+        undercover_ses: Monte Carlo standard errors below nominal at which
+            coverage counts as too low.
+
+    Returns:
+        One row per (cell, method), with the cell columns, method, width,
+        valid and ratio, sorted by cell, then by method in the order given.
+
+    Raises:
+        ValueError: If a cell lacks one of the methods or has it twice, or
+            a cell's true band width is not positive (the ratio is undefined
+            where the band is a point).
+    """
+    cell_columns = list(cell_columns)
+    rows = df[df.method.isin(methods)]
+    if (rows.true_band_width <= 0).any():
+        bad = rows.loc[rows.true_band_width <= 0, cell_columns].iloc[0]
+        raise ValueError(
+            "true band width must be positive in every cell, got "
+            f"{rows.true_band_width.min()} at {tuple(bad)}"
+        )
+    out = _valid_widths(df, methods, cell_columns, nominal, undercover_ses)
+    out["ratio"] = (out.width / rows.true_band_width).where(out.valid)
+    return _sort_by_cell(out, methods, cell_columns)
+
+
+def _valid_widths(
+    df: pd.DataFrame,
+    methods: Sequence[str],
+    cell_columns: list[str],
+    nominal: float,
+    undercover_ses: float,
+) -> pd.DataFrame:
+    """Cell columns, method, width and valid for the methods' rows.
+
+    Raises:
+        ValueError: If a cell lacks one of the methods or has it twice.
+    """
     rows = df[df.method.isin(methods)]
     counts = rows.groupby(cell_columns).method.agg(["nunique", "size"])
     incomplete = counts[(counts["nunique"] != len(methods))
@@ -114,9 +179,13 @@ def width_relative_to_best(
     out = rows[[*cell_columns, "method", "width"]].copy()
     out["valid"] = (rows.cov_joint
                     >= nominal - undercover_ses * rows.cov_joint_mcse)
-    best = (out.width.where(out.valid)
-            .groupby([out[c] for c in cell_columns]).transform("min"))
-    out["ratio"] = (out.width / best).where(out.valid)
+    return out
+
+
+def _sort_by_cell(
+    out: pd.DataFrame, methods: Sequence[str], cell_columns: list[str]
+) -> pd.DataFrame:
+    """Rows sorted by cell, then by method in the order given."""
     order = out.method.map({m: k for k, m in enumerate(methods)})
     return (out.assign(method_order=order)
             .sort_values([*cell_columns, "method_order"])

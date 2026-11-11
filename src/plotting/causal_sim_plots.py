@@ -9,6 +9,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import pandas as pd
+from matplotlib import ticker
 from matplotlib import transforms
 
 from src.plotting import toy_sim_plots
@@ -17,6 +18,19 @@ INK = "#2b2a27"  # median lines
 GRID = "#e5e4e0"
 BOX_ALPHA = 0.35  # fill opacity; edges and whiskers are opaque
 SAVE_PAD_IN = 0.05  # vertical padding kept around the content, inches
+# Candidate ticks on a logarithmic ratio axis; those inside the axis range
+# are labelled as plain numbers.
+LOG_RATIO_TICKS = (1, 1.1, 1.2, 1.3, 1.5, 2, 3, 4, 5, 6, 8, 10, 15, 20)
+
+
+def set_log_ratio_axis(ax: plt.Axes) -> None:
+    """Logarithmic x-axis with plain-number ticks from LOG_RATIO_TICKS."""
+    ax.set_xscale("log")
+    low, high = ax.get_xlim()
+    ticks = [t for t in LOG_RATIO_TICKS if low <= t <= high]
+    ax.xaxis.set_major_locator(ticker.FixedLocator(ticks))
+    ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+    ax.xaxis.set_minor_locator(ticker.NullLocator())
 
 
 def centre_axes(fig: plt.Figure, ax: plt.Axes) -> None:
@@ -56,8 +70,9 @@ def plot_width_ratio_boxes(
     out_path: Path,
     log_x: bool = False,
     figsize: tuple[float, float] = (6.0, 2.6),
+    xlabel: str = "CI width / narrowest valid CI width in the same cell",
 ) -> None:
-    """One horizontal box per method: CI width over the per-cell best.
+    """One horizontal box per method: CI width over a per-cell reference.
 
     Each box summarises a method's ratios over the cells where it is valid;
     the whiskers run from the minimum to the maximum, so the worst case is
@@ -68,7 +83,8 @@ def plot_width_ratio_boxes(
     the figure is included at its natural width.
 
     Args:
-        ratios: Output of mc_metrics.width_relative_to_best.
+        ratios: Output of mc_metrics.width_relative_to_best or
+            mc_metrics.width_relative_to_truth.
         methods: Methods to show, top to bottom.
         labels: Axis label of each method, same order.
         colours: Colour of each method, keyed by method.
@@ -76,6 +92,7 @@ def plot_width_ratio_boxes(
         out_path: Where to save the figure (format from the suffix).
         log_x: Whether the ratio axis is logarithmic.
         figsize: Figure size in inches; 6.0 in is the paper's text width.
+        xlabel: Label of the ratio axis.
 
     Raises:
         ValueError: If labels and methods differ in length, or a method has
@@ -112,8 +129,8 @@ def plot_width_ratio_boxes(
         ax.set_yticks(positions, labels)
         ax.set_ylim(0.4, len(methods) + 0.6)
         if log_x:
-            ax.set_xscale("log")
-        ax.set_xlabel("CI width / narrowest valid CI width in the same cell")
+            set_log_ratio_axis(ax)
+        ax.set_xlabel(xlabel)
         ax.set_title(title)
         ax.grid(axis="x", color=GRID, linewidth=0.8)
         ax.set_axisbelow(True)
