@@ -22,6 +22,24 @@ for the toy comparator and an appendix table.
   provenance in `Figures/toy_sim/PROVENANCE.md`. 3 new unit tests (36 pass,
   stand-in runner).
 
+## Addendum 2026-11-12: M11 added
+
+The user asked for the by-estimate rule in the appendix table after all.
+M11 = "M11 band intersection (split)": `plug_in_weights(fold_a,
+BAND_INTERSECTION_Z, w_grid=CORNER_WEIGHTS)` with `BAND_INTERSECTION_Z = 0`,
+CI from fold B. M1-M10 rows of `results.csv` unchanged (exact); 22 of 23
+checks pass (M7's known failure); M11 valid in all 180 cells (min 0.9444).
+M11 / M3 width, median (min-max) by r: 1.013 (0.997-1.028), 1.049
+(0.993-1.070), 1.108 (0.996-1.134), 1.170 (1.025-1.201), 1.229
+(1.069-1.267). At r = 1 it equals M10 up to the estimated variances (width
+ratio 0.9997-1.0004). At equal gaps it is narrower than both M10 and M3 only
+at g = 1, r = 2 and 3, as the exact calculation below predicts (it favours
+the noisy dataset, right at the upper end when g exceeds the precision cost
+z (SE_2 - SE_1), wrong at the lower end). The table keeps its file name and
+macros, with M11 as the middle column ("band intersection, split"); 37 unit
+tests pass (stand-in runner). The "same relationship" sentence the user had
+drafted in the appendix was replaced by a description of M11's results.
+
 ## Approved scope (supersedes the Code section below where they differ)
 
 - **One method only, M10 = split intersection** (the user: "only employ the

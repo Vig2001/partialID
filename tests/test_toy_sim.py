@@ -53,6 +53,25 @@ def test_corner_weights_pick_the_dataset_with_the_tighter_ci_limit():
         np.testing.assert_array_equal(before, after)
 
 
+def test_band_intersection_weights_pick_the_tighter_estimated_bound():
+    # Row 0: as above, dataset 2 has the tighter estimate at both ends but
+    # s.e. 0.5; intersecting the estimated bands ignores the s.e., so it
+    # picks dataset 2 (w = 0) where intersecting the CIs picks dataset 1.
+    # Row 1: dataset 1 has the tighter estimate at both ends (w = 1).
+    est = toy_sim.BoundEstimates(
+        L=np.array([[1.0, 1.05], [1.1, 1.0]]),
+        U=np.array([[3.0, 2.9], [2.8, 2.9]]),
+        s2=np.array([[0.01, 0.25], [0.25, 0.01]]),
+    )
+    copies = [x.copy() for x in est]
+    w_L, w_U = toy_sim.plug_in_weights(
+        est, toy_sim.BAND_INTERSECTION_Z, w_grid=toy_sim.CORNER_WEIGHTS)
+    np.testing.assert_array_equal(w_L, [0.0, 1.0])
+    np.testing.assert_array_equal(w_U, [0.0, 1.0])
+    for before, after in zip(copies, est):
+        np.testing.assert_array_equal(before, after)
+
+
 def test_convex_training_objective_at_least_corner_objective():
     # {0, 1} is a subset of the weight grid, so on the data the weights are
     # chosen from, the convex limit is never looser than the corner one.
@@ -71,24 +90,25 @@ def test_convex_training_objective_at_least_corner_objective():
     assert np.all(lower_limit(w_convex) >= lower_limit(w_corner) - 1e-12)
 
 
-def test_split_intersection_ci_is_one_datasets_fold_b_ci_per_end():
+def test_split_selection_cis_are_one_datasets_fold_b_ci_per_end():
     cfg = toy_sim.ToyConfig(n=(40, 20), reps=50)
     params = toy_sim.dgp_params(0.05, 0.1, 2, cfg)
     rng = np.random.default_rng(1)
     eps = toy_sim.draw_standard_normals(cfg.n, cfg.reps, rng)
     Y = [m + s * e for m, s, e in zip(params.mu, params.sigma, eps)]
     cis, _ = toy_sim.ci_by_method(Y, params, cfg)
-    ci = cis[toy_sim.M10]
     n_a = [int(cfg.frac_a * n_k) for n_k in cfg.n]
     n_b = [n_k - a for n_k, a in zip(cfg.n, n_a)]
     fold_b = toy_sim.estimate_bounds(
         [y[:, a:] for y, a in zip(Y, n_a)], params.Delta, n_b)
     se = np.sqrt(fold_b.s2)
-    # Weight 1 picks dataset 1 (column 0), weight 0 dataset 2 (column 1).
-    k_L, k_U = (1 - ci.w_L).astype(int), (1 - ci.w_U).astype(int)
     rows = np.arange(cfg.reps)
-    assert set(np.unique(np.concatenate([ci.w_L, ci.w_U]))) <= {0.0, 1.0}
-    np.testing.assert_allclose(
-        ci.lo, fold_b.L[rows, k_L] - cfg.z * se[rows, k_L])
-    np.testing.assert_allclose(
-        ci.hi, fold_b.U[rows, k_U] + cfg.z * se[rows, k_U])
+    for method in toy_sim.SPLIT_SELECTION_METHODS:
+        ci = cis[method]
+        # Weight 1 picks dataset 1 (column 0), weight 0 dataset 2 (column 1).
+        k_L, k_U = (1 - ci.w_L).astype(int), (1 - ci.w_U).astype(int)
+        assert set(np.unique(np.concatenate([ci.w_L, ci.w_U]))) <= {0.0, 1.0}
+        np.testing.assert_allclose(
+            ci.lo, fold_b.L[rows, k_L] - cfg.z * se[rows, k_L])
+        np.testing.assert_allclose(
+            ci.hi, fold_b.U[rows, k_U] + cfg.z * se[rows, k_U])

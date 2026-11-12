@@ -16,7 +16,10 @@ without a sample split). M8 and M9 omit CLR's adaptive inequality selection
 step, so their critical values are fixed. M10, the split intersection,
 intersects the two datasets' CIs on fold A and builds the CI of the dataset
 with the tighter limit at each end on fold B: the convex split CI with each
-weight restricted to {0, 1}.
+weight restricted to {0, 1}. M11, the split band intersection, instead
+intersects the two estimated bands on fold A, i.e. keeps the dataset with
+the tighter estimated bound at each end regardless of its precision, and
+builds that dataset's CI on fold B.
 
 Usage, from the repo root:
     python -m src.toy_sim [--seed 7] [--reps 5000] [--frac-a 0.3] [--no-plots]
@@ -63,11 +66,16 @@ M7 = "M7 convex (cross-fit, K=5)"
 M8 = "M8 intersection (CLR)"
 M9 = "M9 convex (CLR, no split)"
 M10 = "M10 intersection (split)"
+M11 = "M11 band intersection (split)"
 CROSS_FIT_FOLDS = {M7: 5}  # number of folds K per cross-fit method
 # Weights of a single dataset: 0 (dataset 2) or 1 (dataset 1). Optimising
 # the convex objective over these two weights alone selects, at each end,
 # the dataset with the tighter CI limit, i.e. intersects the two CIs (M10).
 CORNER_WEIGHTS = np.array([0.0, 1.0])
+# With z = 0 the corner objective compares the estimated bounds alone,
+# ignoring their precision, i.e. intersects the two estimated bands (M11).
+BAND_INTERSECTION_Z = 0.0
+SPLIT_SELECTION_METHODS = (M10, M11)  # compared with M3 by width
 PLOT_METHODS = (M1, M2, M3, M4)
 CLR_COMPARATORS = (M3, M7, M9)  # methods whose width is compared with M8
 UNDERCOVER_SES = 2  # flag coverage this many MC s.e. below nominal
@@ -213,7 +221,9 @@ def plug_in_weights(
 
     Args:
         est: Estimated bounds and the variances the CI will use.
-        z: Critical value for each end.
+        z: Critical value for each end. With z = BAND_INTERSECTION_Z and
+            CORNER_WEIGHTS, the choice is the dataset with the tighter
+            estimated bound (the intersection of the two estimated bands).
         w_grid: Candidate weights on dataset 1. CORNER_WEIGHTS restricts the
             choice to a single dataset per end, the one with the tighter CI
             limit (the intersection of the two CIs).
@@ -329,6 +339,11 @@ def ci_by_method(
         M10: ci_methods.convex_ci(
             fold_b.L, fold_b.U, fold_b.s2,
             *plug_in_weights(fold_a, z, w_grid=CORNER_WEIGHTS), z
+        ),
+        M11: ci_methods.convex_ci(
+            fold_b.L, fold_b.U, fold_b.s2,
+            *plug_in_weights(fold_a, BAND_INTERSECTION_Z,
+                             w_grid=CORNER_WEIGHTS), z
         ),
     }
     for method, n_folds in CROSS_FIT_FOLDS.items():
@@ -502,14 +517,14 @@ def _check_coverage_separable(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
 def _check_joint_coverage(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
     """Joint coverage >= 1 - alpha in every cell (up to MC error).
 
-    Guaranteed for M6, for M10 by the sample split (its weights depend on
-    fold A only), and asymptotically for M8 and M9. For the cross-fitted
-    methods it is not guaranteed near ties (fold estimates and weights are
-    dependent), so a FAIL there is a finding, not a bug.
+    Guaranteed for M6, for M10 and M11 by the sample split (their weights
+    depend on fold A only), and asymptotically for M8 and M9. For the
+    cross-fitted methods it is not guaranteed near ties (fold estimates and
+    weights are dependent), so a FAIL there is a finding, not a bug.
     """
     nominal = 1 - cfg.alpha
     checks = []
-    for method in (M6, *CROSS_FIT_FOLDS, M8, M9, M10):
+    for method in (M6, *CROSS_FIT_FOLDS, M8, M9, *SPLIT_SELECTION_METHODS):
         cells = df[df.method == method]
         # Cells with coverage 1 have MC SE 0 and give z = +inf, which passes.
         zs = (cells.cov_joint - nominal) / cells.cov_joint_mcse
@@ -609,36 +624,42 @@ def print_clr_comparison(ratios: pd.DataFrame, n_cells: int) -> None:
         print(summary.to_string())
 
 
-def split_intersection_width_ratios(
+def split_selection_width_ratios(
     df: pd.DataFrame, cfg: ToyConfig
 ) -> pd.DataFrame:
-    """Mean CI width of M10 over M3's, in cells where both CIs are valid.
+    """Mean CI width of M10 and M11 over M3's, where both CIs are valid.
 
-    M10 is M3 with each weight restricted to {0, 1}, so the ratio isolates
-    what the convex weights add over selecting one dataset per end. Valid
-    means joint coverage at most UNDERCOVER_SES MC s.e. below 1 - alpha.
+    M10 is M3 with each weight restricted to {0, 1}, so its ratio isolates
+    what the convex weights add over selecting one dataset per end; M11
+    also drops the precision term from the selection. Valid means joint
+    coverage at most UNDERCOVER_SES MC s.e. below 1 - alpha.
 
     Returns:
-        Columns r, g_L, g_U and ratio, one row per cell where both are valid.
+        Columns r, g_L, g_U, method (M10 or M11) and ratio, one row per
+        method and cell where both CIs are valid.
     """
     keys = ["r", "g_L", "g_U"]
     valid = (df.cov_joint
              >= 1 - cfg.alpha - UNDERCOVER_SES * df.cov_joint_mcse)
     width = df[valid].set_index(keys)
-    ratio = (width[width.method == M10].width
-             / width[width.method == M3].width)
-    return ratio.dropna().rename("ratio").reset_index()
+    convex = width[width.method == M3].width
+    frames = []
+    for method in SPLIT_SELECTION_METHODS:
+        ratio = (width[width.method == method].width / convex).dropna()
+        frames.append(ratio.rename("ratio").reset_index().assign(method=method))
+    return pd.concat(frames, ignore_index=True)
 
 
-def print_split_intersection_comparison(
+def print_split_selection_comparison(
     ratios: pd.DataFrame, n_cells: int
 ) -> None:
-    """Prints, per r, the median and range of M10's width over M3's."""
-    summary = ratios.groupby("r").ratio.agg(
+    """Prints, per method and r, the median and range of width over M3's."""
+    summary = ratios.groupby(["method", "r"]).ratio.agg(
         both_valid="count", median="median", min="min", max="max"
     )
-    print(f"\nWidth of M10 (split intersection) over M3 (convex split), "
-          f"cells where both cover (of {n_cells})")
+    print(f"\nWidth of M10 (split intersection) and M11 (split band "
+          f"intersection) over M3 (convex split), cells where both cover "
+          f"(of {n_cells})")
     with pd.option_context("display.float_format", "{:.3f}".format):
         print(summary.to_string())
 
@@ -697,8 +718,8 @@ def run(cfg: ToyConfig, seed: int, out_dir: Path, plots: bool) -> pd.DataFrame:
     run_sanity_checks(df, cfg)
     print_diagonal(df)
     print_clr_comparison(clr_width_ratios(df, cfg), len(cfg.gaps) ** 2)
-    print_split_intersection_comparison(
-        split_intersection_width_ratios(df, cfg), len(cfg.gaps) ** 2
+    print_split_selection_comparison(
+        split_selection_width_ratios(df, cfg), len(cfg.gaps) ** 2
     )
     if plots:
         make_plots(df, cfg, out_dir)

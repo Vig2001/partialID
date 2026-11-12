@@ -20,7 +20,7 @@ Outputs, in src/outputs/toy_sim/:
         M3, M7, M8, M9 (fused CIs only), with --with-oracle M2 last, or
     width_coverage_clr_r<ratios>.tex  columns M3, M7, M8 (CLR), or
     width_coverage_split_intersection_r<ratios>.tex  columns M10 (split
-        intersection) and M3 (convex split);
+        intersection), M11 (split band intersection) and M3 (convex split);
     each name gets an _mcse suffix with --with-mcse (MC s.e. of each width
     on a second line in the cell). With --metric band the cells are mean
     estimated band widths U_hat - L_hat and the name starts band_width_
@@ -67,9 +67,11 @@ TABLE_METHODS_FUSED = (toy_sim.M6, toy_sim.M3, toy_sim.M7, toy_sim.M8,
 TABLE_METHODS_FUSED_ORACLE = TABLE_METHODS_FUSED + (toy_sim.M2,)
 # Paper table: the valid convex CIs against the CLR intersection bounds.
 TABLE_METHODS_CLR = (toy_sim.M3, toy_sim.M7, toy_sim.M8)
-# Appendix table: the split intersection against the convex split CI, i.e.
-# the split CI with and without its weights restricted to {0, 1}.
-TABLE_METHODS_SPLIT_INTERSECTION = (toy_sim.M10, toy_sim.M3)
+# Appendix table: the split intersection and split band intersection against
+# the convex split CI, i.e. the split CI with its weights restricted to
+# {0, 1}, selected by CI limit (M10) or by estimated bound (M11), and not
+# restricted (M3).
+TABLE_METHODS_SPLIT_INTERSECTION = (toy_sim.M10, toy_sim.M11, toy_sim.M3)
 # Caption macros: name -> results.csv column of MC s.e.; each name gives
 # macros <prefix><name>Median, <prefix><name>Min and <prefix><name>Max over
 # the table's cells.
@@ -284,8 +286,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                               "width_coverage_clr_r<ratios>.tex; caption "
                               "macros start \\toyClr.")
     columns.add_argument("--split-intersection", action="store_true",
-                         help="Columns M10 (split intersection) and M3 "
-                              "(convex split), written to "
+                         help="Columns M10 (split intersection), M11 "
+                              "(split band intersection) and M3 (convex "
+                              "split), written to "
                               "width_coverage_split_intersection_r<ratios>"
                               ".tex; caption macros start \\toySplitInt.")
     parser.add_argument("--with-oracle", action="store_true",
