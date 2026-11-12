@@ -5,7 +5,8 @@ Does not rerun the simulation: run `python -m src.toy_sim` first.
 Usage, from the repo root:
     python -m src.latex.toy_sim_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
         [--table-ratios 1 2 5]
-        [--with-calibrated | --by-dataset | --fused | --clr]
+        [--with-calibrated | --by-dataset | --fused | --clr
+         | --split-intersection]
         [--with-oracle] [--with-mcse] [--metric ci|band|ends]
 Outputs, in src/outputs/toy_sim/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, naive intersection vs split
@@ -17,7 +18,9 @@ Outputs, in src/outputs/toy_sim/:
         and the name ends _oracle, or
     width_coverage_fused_r<ratios>.tex  the same without dataset 1: M6,
         M3, M7, M8, M9 (fused CIs only), with --with-oracle M2 last, or
-    width_coverage_clr_r<ratios>.tex  columns M3, M7, M8 (CLR);
+    width_coverage_clr_r<ratios>.tex  columns M3, M7, M8 (CLR), or
+    width_coverage_split_intersection_r<ratios>.tex  columns M10 (split
+        intersection) and M3 (convex split);
     each name gets an _mcse suffix with --with-mcse (MC s.e. of each width
     on a second line in the cell). With --metric band the cells are mean
     estimated band widths U_hat - L_hat and the name starts band_width_
@@ -32,8 +35,9 @@ Outputs, in src/outputs/toy_sim/:
         table, as LaTeX macros for the caption: \\toyWidthMcse{Median,Min,Max}
         and \\toyCovMcse{...} (ci), \\toyBandMcse{...} (band), or
         \\toyLowerEndMcse{...} and \\toyUpperEndMcse{...} (ends); with --clr
-        the names start \\toyClr instead of \\toy, so both sets can be
-        input in one document
+        the names start \\toyClr instead of \\toy, and with
+        --split-intersection \\toySplitInt, so the sets can be input in one
+        document
 """
 
 import argparse
@@ -63,6 +67,9 @@ TABLE_METHODS_FUSED = (toy_sim.M6, toy_sim.M3, toy_sim.M7, toy_sim.M8,
 TABLE_METHODS_FUSED_ORACLE = TABLE_METHODS_FUSED + (toy_sim.M2,)
 # Paper table: the valid convex CIs against the CLR intersection bounds.
 TABLE_METHODS_CLR = (toy_sim.M3, toy_sim.M7, toy_sim.M8)
+# Appendix table: the split intersection against the convex split CI, i.e.
+# the split CI with and without its weights restricted to {0, 1}.
+TABLE_METHODS_SPLIT_INTERSECTION = (toy_sim.M10, toy_sim.M3)
 # Caption macros: name -> results.csv column of MC s.e.; each name gives
 # macros <prefix><name>Median, <prefix><name>Min and <prefix><name>Max over
 # the table's cells.
@@ -80,6 +87,7 @@ TABLE_PREFIXES = {
 }
 MACRO_PREFIX = "toy"
 MACRO_PREFIX_CLR = "toyClr"
+MACRO_PREFIX_SPLIT_INTERSECTION = "toySplitInt"
 # LaTeX macro wrapping a method's cell, so the slide controls overlays.
 TABLE_CELL_MACROS = {toy_sim.M3: r"\splitcol", toy_sim.M4: r"\plugincol"}
 UNDERCOVER_SES = toy_sim.UNDERCOVER_SES
@@ -275,6 +283,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                          help="Columns M3, M7, M8 (CLR), written to "
                               "width_coverage_clr_r<ratios>.tex; caption "
                               "macros start \\toyClr.")
+    columns.add_argument("--split-intersection", action="store_true",
+                         help="Columns M10 (split intersection) and M3 "
+                              "(convex split), written to "
+                              "width_coverage_split_intersection_r<ratios>"
+                              ".tex; caption macros start \\toySplitInt.")
     parser.add_argument("--with-oracle", action="store_true",
                         help="With --by-dataset or --fused only: add the "
                              "oracle convex CI (M2) as the last column, "
@@ -313,6 +326,8 @@ def main() -> None:
     plot_joint_coverage(df, args.ratio, cfg, fig_path)
     ratios = "-".join(f"{r:g}" for r in args.table_ratios)
     macro_prefix = MACRO_PREFIX_CLR if args.clr else MACRO_PREFIX
+    if args.split_intersection:
+        macro_prefix = MACRO_PREFIX_SPLIT_INTERSECTION
     if args.by_dataset and args.with_oracle:
         methods = TABLE_METHODS_BY_DATASET_ORACLE
         table_name = f"datasets_r{ratios}_oracle"
@@ -325,6 +340,9 @@ def main() -> None:
         methods, table_name = TABLE_METHODS_FUSED, f"fused_r{ratios}"
     elif args.clr:
         methods, table_name = TABLE_METHODS_CLR, f"clr_r{ratios}"
+    elif args.split_intersection:
+        methods = TABLE_METHODS_SPLIT_INTERSECTION
+        table_name = f"split_intersection_r{ratios}"
     elif args.with_calibrated:
         methods = TABLE_METHODS_CALIBRATED
         table_name = "small_gaps_calibrated"
