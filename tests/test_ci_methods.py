@@ -293,3 +293,119 @@ def test_clr_convex_ci_leaves_inputs_unchanged():
     ci_methods.clr_convex_ci(L, U, s2, P_END)
     for before, after in zip(copies, (L, U, s2)):
         np.testing.assert_array_equal(before, after)
+
+
+# ----------------- calibrated CIs and CLR with selection (2026-11-13) --------
+GAMMA = ci_methods.clr_selection_level(2500)  # toy n_1 + n_2
+KEEP_ALL = 1 - 1e-12  # selection level so high that every bound is kept
+
+
+def test_calibrated_ci_intersection_equals_clr_without_selection():
+    # With the Sidak value, intersecting the two CIs is the CLR intersection.
+    L, U, s2 = _random_bounds(np.random.default_rng(10))
+    a = ci_methods.calibrated_ci_intersection(L, U, s2, Z_CALIBRATED)
+    b = ci_methods.clr_intersection_ci(L, U, s2, P_END)
+    np.testing.assert_allclose(a.lo, b.lo, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(a.hi, b.hi, rtol=0, atol=1e-12)
+
+
+def test_selection_level_matches_clr_formula():
+    np.testing.assert_allclose(ci_methods.clr_selection_level(2500),
+                               1 - 0.1 / np.log(2500))
+    with pytest.raises(ValueError):
+        ci_methods.clr_selection_level(1)
+
+
+def test_intersection_selection_keeping_both_equals_no_selection():
+    L, U, s2 = _random_bounds(np.random.default_rng(11))
+    a = ci_methods.clr_intersection_selection_ci(L, U, s2, P_END, KEEP_ALL)
+    b = ci_methods.clr_intersection_ci(L, U, s2, P_END)
+    np.testing.assert_allclose(a.lo, b.lo, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(a.hi, b.hi, rtol=0, atol=1e-12)
+
+
+def test_intersection_selection_drops_a_far_bound_to_one_sided_value():
+    # Dataset 2's upper bound is 50 s.e. above dataset 1's: only dataset 1 is
+    # kept, so the CI end is U_1 + Phi^{-1}(p) se_1.
+    L, U, s2 = _arrays([[0.0, 0.0]], [[2.0, 7.0]], [[0.01, 0.01]])
+    ci = ci_methods.clr_intersection_selection_ci(L, U, s2, P_END, GAMMA)
+    np.testing.assert_allclose(ci.hi, [2.0 + stats.norm.ppf(P_END) * 0.1])
+
+
+def test_convex_selection_keeping_all_equals_convex_clr():
+    L, U, s2 = _random_bounds(np.random.default_rng(12), n_reps=200)
+    a = ci_methods.clr_convex_selection_ci(L, U, s2, P_END, KEEP_ALL)
+    b = ci_methods.clr_convex_ci(L, U, s2, P_END)
+    np.testing.assert_allclose(a.lo, b.lo, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(a.hi, b.hi, rtol=0, atol=1e-9)
+
+
+def test_selection_never_widens_either_clr_ci():
+    L, U, s2 = _random_bounds(np.random.default_rng(13), n_reps=300)
+    pairs = (
+        (ci_methods.clr_intersection_selection_ci(L, U, s2, P_END, GAMMA),
+         ci_methods.clr_intersection_ci(L, U, s2, P_END)),
+        (ci_methods.clr_convex_selection_ci(L, U, s2, P_END, GAMMA),
+         ci_methods.clr_convex_ci(L, U, s2, P_END)),
+    )
+    for selected, all_kept in pairs:
+        assert np.all(selected.hi <= all_kept.hi + 1e-12)
+        assert np.all(selected.lo >= all_kept.lo - 1e-12)
+
+
+def test_arc_quantile_spans_one_direction_to_whole_quadrant():
+    no_dropped = np.zeros((2, 1))
+    k = ci_methods._arc_quantile(P_END, np.array([0.0, np.pi / 2]), no_dropped)
+    np.testing.assert_allclose(
+        k, [stats.norm.ppf(P_END), _quadrant_quantile(P_END)], atol=1e-10)
+
+
+def test_arc_exceedance_matches_monte_carlo():
+    # Two kept arcs of directions with a dropped arc between them.
+    arcs = [(0.0, 0.3), (1.1, np.pi / 2)]
+    angles = np.linspace(0, np.pi / 2, 601)
+    kept = np.zeros(angles.size, bool)
+    for a, b in arcs:
+        kept |= (angles >= a) & (angles <= b)
+    draws = np.random.default_rng(14).standard_normal((200_000, 2))
+    sup = (draws @ np.vstack([np.cos(angles[kept]), np.sin(angles[kept])])
+           ).max(axis=1)
+    k = 2.24
+    simulated = np.mean(sup > k)
+    formula = ci_methods._arc_exceedance(
+        np.array([k]), np.array([0.3 + (np.pi / 2 - 1.1)]),
+        np.array([[1.1 - 0.3]]))[0]
+    mc_se = np.sqrt(simulated * (1 - simulated) / draws.shape[0])
+    assert abs(simulated - formula) < 4 * mc_se
+
+
+def test_kept_arcs_measures_two_corner_runs():
+    # se_1 = se_2, so the angle of weight w is atan2(1 - w, w).
+    w_grid = np.linspace(0, 1, 11)
+    kept = np.zeros((1, 11), bool)
+    kept[0, [0, 1, 2, 8, 9, 10]] = True
+    arc, dropped_arcs = ci_methods._kept_arcs(
+        kept, np.array([[0.1, 0.1]]), w_grid)
+    phi = np.arctan2(1 - w_grid, w_grid)
+    np.testing.assert_allclose(arc, [phi[0] - phi[2] + phi[8] - phi[10]])
+    np.testing.assert_allclose(dropped_arcs[0, 0], phi[2] - phi[8])
+
+
+def test_selection_cis_reject_bad_levels():
+    L, U, s2 = _arrays([[0.0, 0.1]], [[2.0, 2.1]], [[0.01, 0.02]])
+    for method in (ci_methods.clr_intersection_selection_ci,
+                   ci_methods.clr_convex_selection_ci):
+        with pytest.raises(ValueError):
+            method(L, U, s2, 0.4, GAMMA)
+        with pytest.raises(ValueError):
+            method(L, U, s2, P_END, 1.0)
+
+
+def test_selection_cis_leave_inputs_unchanged():
+    L, U, s2 = _random_bounds(np.random.default_rng(15), n_reps=50)
+    copies = [x.copy() for x in (L, U, s2)]
+    ci_methods.clr_intersection_selection_ci(L, U, s2, P_END, GAMMA)
+    ci_methods.clr_convex_selection_ci(L, U, s2, P_END, GAMMA)
+    ci_methods.calibrated_ci_intersection(L, U, s2, Z_CALIBRATED)
+    for original, copy in zip((L, U, s2), copies):
+        np.testing.assert_array_equal(original, copy)

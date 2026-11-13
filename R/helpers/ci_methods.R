@@ -12,6 +12,11 @@
 #                 end.
 
 W_GRID <- seq(0, 1, length.out = 1001)  # Candidate weights, spacing 1e-3.
+# Weights of a single study: 0 (study 2) or 1 (study 1). Optimising the
+# convex objective over these two alone selects, at each end, the study with
+# the tighter CI limit, i.e. intersects the two CIs (CORNER_WEIGHTS in
+# src/toy_sim.py).
+CORNER_WEIGHTS <- c(0, 1)
 
 
 #' Stops unless the bound matrices share shape R x 2, variances are
@@ -285,6 +290,244 @@ clr_convex_ci <- function(L, U, s2_L, s2_U, p, w_grid = W_GRID) {
   # max_w L(w) = -min_w (-L(w)), with the same weight on study 1.
   fam_L <- convex_family(-L, s2_L, w_grid)
   lower <- clr_upper(fam_L$theta, fam_L$s, k_p, k_half)
+  list(
+    lo = -lower$ci_end,
+    hi = upper$ci_end,
+    L_hat = -lower$estimate,
+    U_hat = upper$estimate,
+    w_L = w_grid[lower$index],
+    w_U = w_grid[upper$index]
+  )
+}
+
+
+# ------------- calibrated CIs and CLR with selection (2026-11-13) -----------
+# Ports of calibrated_ci_intersection, clr_intersection_selection_ci and
+# clr_convex_selection_ci in src/helpers/ci_methods.py (same algorithms, so
+# the two agree to rounding error), with separate variances at each end.
+# The selection step is CLR (2013) eqs. (3.4)-(3.5), p. 687, with gamma_n =
+# 1 - 0.1 / log n (l_n := log n, p. 686); the CI end is eq. (3.7), p. 688.
+# Critical values come from Hotelling's tube formula for d = 1, exact here
+# (arc_exceedance()), instead of CLR's simulation (Definition 3, p. 690).
+
+SELECTION_GAMMA_CONSTANT <- 0.1  # gamma_n = 1 - 0.1 / log n (CLR)
+SIMPSON_PANELS <- 64  # composite Simpson panels for the dropped-arc integral
+BISECTION_STEPS <- 60  # bisection steps for the kept-set critical value
+
+
+#' Intersection of the two studies' CIs, each with critical value z.
+#'
+#' lo = max_k (L_k - z se_k), hi = min_k (U_k + z se_k). With the Sidak value
+#' this equals clr_intersection_ci() at p = 1 - alpha / 2; it is written out
+#' separately so that the tables show the equality in the results.
+#'
+#' @return CI list; L_hat and U_hat are the estimates of the studies attaining
+#'   the CI ends; w_L and w_U are 1 where study 1 attains them.
+calibrated_ci_intersection <- function(L, U, s2_L, s2_U, z) {
+  validate_bounds(L, U, s2_L, s2_U, z)
+  rows <- seq_len(nrow(L))
+  lower_limits <- L - z * sqrt(s2_L)
+  upper_limits <- U + z * sqrt(s2_U)
+  k_L <- max.col(lower_limits, ties.method = "first")
+  k_U <- max.col(-upper_limits, ties.method = "first")
+  list(
+    lo = lower_limits[cbind(rows, k_L)],
+    hi = upper_limits[cbind(rows, k_U)],
+    L_hat = L[cbind(rows, k_L)],
+    U_hat = U[cbind(rows, k_U)],
+    w_L = as.numeric(k_L == 1),
+    w_U = as.numeric(k_U == 1)
+  )
+}
+
+
+#' CLR's selection level gamma_n = 1 - 0.1 / log(n); n = n_1 + n_2 here.
+clr_selection_level <- function(n) {
+  if (n < 2) stop(sprintf("n must be >= 2, got %s", n))
+  1 - SELECTION_GAMMA_CONSTANT / log(n)
+}
+
+
+#' CLR's adaptive inequality selection at an upper end: bound j is kept if
+#' theta_j <= min_i (theta_i + k_gamma s_i) + 2 k_gamma s_j.
+#'
+#' @return Logical R x J matrix.
+kept_by_selection <- function(theta, s, k_gamma) {
+  floor <- apply(theta + k_gamma * s, 1, min)
+  theta <= floor + 2 * k_gamma * s
+}
+
+
+#' CLR upper end for min(theta_1, theta_2) with selection: with m kept
+#' bounds the critical value is Phi^{-1}(p^{1/m}).
+#'
+#' @return List with ci_end, estimate (level 1/2) and index.
+clr_upper_selected_intersection <- function(theta, s, k_gamma, p) {
+  m <- rowSums(kept_by_selection(theta, s, k_gamma))
+  end <- smallest_corrected(theta, s, qnorm(p^(1 / m)))
+  list(ci_end = end$value,
+       estimate = smallest_corrected(theta, s, qnorm(0.5^(1 / m)))$value,
+       index = end$index)
+}
+
+
+#' Stops unless gamma lies in (1/2, 1).
+validate_gamma <- function(gamma) {
+  if (!(gamma > 0.5 && gamma < 1)) {
+    stop(sprintf("gamma must lie in (0.5, 1), got gamma = %s", gamma))
+  }
+}
+
+
+#' CLR intersection CI with adaptive inequality selection, two studies.
+#'
+#' Selection uses k_gamma = Phi^{-1}(sqrt(gamma)); the critical value is
+#' Phi^{-1}(p^{1/m}) for m kept bounds (2.239 or 1.960 at p = 0.975); the CI
+#' end is the smallest corrected bound over both studies.
+#'
+#' @param gamma Selection level, e.g. clr_selection_level(n_1 + n_2).
+#' @return CI list; L_hat and U_hat are the half-median-unbiased estimates.
+clr_intersection_selection_ci <- function(L, U, s2_L, s2_U, p, gamma) {
+  validate_bounds(L, U, s2_L, s2_U, 1)
+  validate_level(p, 0.5)
+  validate_gamma(gamma)
+  k_gamma <- max_of_two_quantile(gamma)
+  upper <- clr_upper_selected_intersection(U, sqrt(s2_U), k_gamma, p)
+  lower <- clr_upper_selected_intersection(-L, sqrt(s2_L), k_gamma, p)
+  list(
+    lo = -lower$ci_end,
+    hi = upper$ci_end,
+    L_hat = -lower$estimate,
+    U_hat = upper$estimate,
+    w_L = as.numeric(lower$index == 1),
+    w_U = as.numeric(upper$index == 1)
+  )
+}
+
+
+#' (1/pi) int_0^{delta/2} exp(-k^2 / (2 cos^2 t)) dt per dropped arc delta,
+#' by composite Simpson; an R x G matrix, zero for a zero angle. k has
+#' length R, dropped_arcs is R x G.
+dropped_arc_integral <- function(k, dropped_arcs) {
+  nodes <- seq(0, 1, length.out = 2 * SIMPSON_PANELS + 1)
+  weights <- rep(1, length(nodes))
+  weights[seq(2, length(nodes) - 1, by = 2)] <- 4
+  weights[seq(3, length(nodes) - 2, by = 2)] <- 2
+  total <- matrix(0, nrow(dropped_arcs), ncol(dropped_arcs))
+  for (i in seq_along(nodes)) {
+    t <- dropped_arcs / 2 * nodes[i]
+    total <- total + weights[i] * exp(-k^2 / (2 * cos(t)^2))
+  }
+  step <- dropped_arcs / 2 / (2 * SIMPSON_PANELS)
+  step / 3 * total / pi
+}
+
+
+#' P(sup over a union of arcs S of u'Z > k), Z ~ N(0, I_2), k >= 0, S
+#' inside the positive quadrant: Q(k) + |S| / (2 pi) exp(-k^2 / 2) plus the
+#' dropped-arc integrals (see _arc_exceedance in the Python module).
+#'
+#' Hotelling's tube formula for a one-dimensional index set (d = 1), exact
+#' here since Z is two-dimensional and S is an arc no longer than pi / 2. It
+#' is the "exact version of the tube formula" that CLR's simulated critical
+#' values approximate (CLR 2013, p. 698, Remark 2: "A sharper analytical
+#' approach can be based on Hotelling's tube method ... That approach is
+#' tractable for the case of d = 1, but does not immediately extend to
+#' d > 1. Note that the simulation based approach is effectively a numeric
+#' version of the exact version of the tube formula and is less conservative
+#' than using simplified tube formulas."). Derivation in
+#' partialID_Overleaf/Notes/Simulation_Notes/toy_sim_explained.tex.
+arc_exceedance <- function(k, arc_length, dropped_arcs) {
+  pnorm(k, lower.tail = FALSE) + arc_length / (2 * pi) * exp(-k^2 / 2) +
+    rowSums(dropped_arc_integral(k, dropped_arcs))
+}
+
+
+#' The level-quantile of that sup per row, by bisection between the
+#' quantiles for one direction and for the whole quadrant.
+arc_quantile <- function(level, arc_length, dropped_arcs) {
+  lo <- rep(qnorm(level), length(arc_length))
+  hi <- rep(quadrant_sup_quantile(level), length(arc_length))
+  for (step in seq_len(BISECTION_STEPS)) {
+    mid <- (lo + hi) / 2
+    above <- arc_exceedance(mid, arc_length, dropped_arcs) > 1 - level
+    lo <- ifelse(above, mid, lo)
+    hi <- ifelse(above, hi, mid)
+  }
+  (lo + hi) / 2
+}
+
+
+#' Total angle and dropped_arcs of the standardised-error directions of the kept
+#' weights; weight w has angle atan2((1 - w) se_2, w se_1).
+#'
+#' @param kept Logical R x W matrix over w_grid.
+#' @param se R x 2 standard errors of the two bounds.
+#' @return List with arc_length (length R) and dropped_arcs (R x G,
+#'   zero-padded).
+kept_arcs <- function(kept, se, w_grid) {
+  n_w <- length(w_grid)
+  phi <- atan2(outer(se[, 2], 1 - w_grid), outer(se[, 1], w_grid))
+  both_kept <- kept[, -n_w, drop = FALSE] & kept[, -1, drop = FALSE]
+  arc_length <- rowSums((phi[, -n_w, drop = FALSE] - phi[, -1, drop = FALSE]) *
+                          both_kept)
+  # A dropped arc ends at kept column j when the previous kept column is
+  # < j - 1.
+  previous <- matrix(0L, nrow(kept), n_w)
+  last <- integer(nrow(kept))
+  for (j in seq_len(n_w)) {
+    previous[, j] <- last
+    last <- ifelse(kept[, j], j, last)
+  }
+  ends_dropped <- kept & previous > 0 & previous < col(kept) - 1
+  where <- which(ends_dropped, arr.ind = TRUE)
+  if (nrow(where) == 0) {
+    return(list(arc_length = arc_length,
+                dropped_arcs = matrix(0, nrow(kept), 1)))
+  }
+  sizes <- phi[cbind(where[, 1], previous[where])] - phi[where]
+  rank <- ave(seq_len(nrow(where)), where[, 1], FUN = seq_along)
+  dropped_arcs <- matrix(0, nrow(kept), max(rank))
+  dropped_arcs[cbind(where[, 1], rank)] <- sizes
+  list(arc_length = arc_length, dropped_arcs = dropped_arcs)
+}
+
+
+#' CLR upper end over all convex weights with selection.
+#'
+#' @return List with ci_end, estimate (level 1/2) and index.
+clr_upper_selected_convex <- function(theta, s, se, w_grid, k_gamma, p) {
+  arcs <- kept_arcs(kept_by_selection(theta, s, k_gamma), se, w_grid)
+  k_p <- arc_quantile(p, arcs$arc_length, arcs$dropped_arcs)
+  k_half <- arc_quantile(0.5, arcs$arc_length, arcs$dropped_arcs)
+  end <- smallest_corrected(theta, s, k_p)
+  list(ci_end = end$value,
+       estimate = smallest_corrected(theta, s, k_half)$value,
+       index = end$index)
+}
+
+
+#' Convex CLR CI with adaptive inequality selection over the weights.
+#'
+#' Selection uses k_gamma = quadrant_sup_quantile(gamma); the critical value
+#' is the p-quantile of the sup over the kept weights (arc_quantile()); the
+#' CI end is the smallest corrected bound over all weights.
+#'
+#' @param gamma Selection level, e.g. clr_selection_level(n_1 + n_2).
+#' @return CI list; L_hat and U_hat are the half-median-unbiased estimates.
+clr_convex_selection_ci <- function(L, U, s2_L, s2_U, p, gamma,
+                                    w_grid = W_GRID) {
+  validate_bounds(L, U, s2_L, s2_U, 1)
+  if (any(s2_L <= 0) || any(s2_U <= 0)) stop("variances must be positive")
+  validate_level(p, 0.5)
+  validate_gamma(gamma)
+  k_gamma <- quadrant_sup_quantile(gamma)
+  fam_U <- convex_family(U, s2_U, w_grid)
+  upper <- clr_upper_selected_convex(fam_U$theta, fam_U$s, sqrt(s2_U), w_grid,
+                                     k_gamma, p)
+  fam_L <- convex_family(-L, s2_L, w_grid)
+  lower <- clr_upper_selected_convex(fam_L$theta, fam_L$s, sqrt(s2_L), w_grid,
+                                     k_gamma, p)
   list(
     lo = -lower$ci_end,
     hi = upper$ci_end,

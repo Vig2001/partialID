@@ -5,6 +5,8 @@
 #   dataset 1, dataset 2        each study alone (full-sample fits)
 #   intersection (calibrated)   full-sample fits, z = qnorm(sqrt(1 - alpha/2))
 #                               (Sidak over the two independent studies)
+#   intersection (split)        at each end, the study whose fold-A CI limit
+#                               is tighter, its CI from fold B
 #   convex (split)              weights from fold A, CI from fold B
 #   convex (cross-fit)          K folds per study, standard cross-fitting:
 #                               for each fold f, nuisance models fitted on
@@ -15,7 +17,9 @@
 #                               bounds are averaged
 #   intersection (CLR)          CLR intersection bounds, every bound kept
 #   convex (CLR)                CLR over all convex combinations, no split
-# M8 and M9 use level p = 1 - alpha/2 at each end, as in src/toy_sim.py.
+# The CLR methods use level p = 1 - alpha/2 at each end, as in
+# src/toy_sim.py. Every method but the cross-fit is computed by pair_cis() in
+# R/causal_sim.R.
 # Fits per study and replicate: full, fold A and fold B of both studies
 # first, then for each fold f of the K one fit on its complement, which also
 # predicts for fold f (3 + K in all). Drawing the cross-fitting folds last
@@ -49,9 +53,7 @@ source(file.path("R", "causal_sim.R"))  # Its main() runs only when called.
 source(file.path("R", "helpers", "dvds_lean.R"))
 
 M7 <- "convex (cross-fit)"
-M8 <- "intersection (CLR)"
-M9 <- "convex (CLR)"
-METHODS_QUICK <- c(M5_D1, M5_D2, M6, M3, M7, M8, M9)
+METHODS_QUICK <- c(M5_D1, M5_D2, M6, M10, M3, M7, M14, M8, M9, M12, M13)
 DEFAULT_FOLDS <- 5
 DEFAULT_OUT_DIR <- file.path("src", "outputs", "causal_sim_quick")
 DEFAULT_OUT_DIR_FOREST <- file.path("src", "outputs", "causal_sim_forest")
@@ -127,7 +129,6 @@ quick_config <- function(argv = commandArgs(trailingOnly = TRUE)) {
   cfg$folds <- args$folds
   cfg$nuisance_folds <- args$nuisance_folds
   cfg$fits <- quick_fits(args$folds)
-  cfg$p <- 1 - cfg$alpha / 2  # Level of each one-sided CLR end.
   cfg$summarise_only <- args$summarise_only
   cfg
 }
@@ -282,26 +283,7 @@ run_simulation_quick <- function(cfg) {
 
 
 # ----------------------------- confidence intervals ------------------------
-#' The R x 2 matrices (study 1 at Lambda index i, study 2 at index j) of
-#' one fit, for each column of bound_arrays().
-pick_fit <- function(arrays, fit, i, j) {
-  lapply(arrays[[fit]], function(a) cbind(a[[1]][, i], a[[2]][, j]))
-}
-
-
-#' Plug-in weights (omega_L, omega_U) from one fit, with its variances
-#' rescaled by `scale` (an R x 2 matrix) to the size the final CI uses.
-fit_weights <- function(fit, scale, z) {
-  list(w_L = optimal_weight_grid(fit$lower[, 1], fit$lower[, 2],
-                                 fit$s2_lower[, 1] * scale[, 1],
-                                 fit$s2_lower[, 2] * scale[, 2],
-                                 lower = TRUE, z),
-       w_U = optimal_weight_grid(fit$upper[, 1], fit$upper[, 2],
-                                 fit$s2_upper[, 1] * scale[, 1],
-                                 fit$s2_upper[, 2] * scale[, 2],
-                                 lower = FALSE, z))
-}
-
+# pick_fit() and fit_weights() are defined in R/causal_sim.R.
 
 #' Cross-fitted convex CI at one pair: fold f's weights from its complement
 #' (variances scaled to the full n, the size of the final CI's variance),
@@ -323,30 +305,12 @@ cross_fit_pair_ci <- function(arrays, i, j, cfg) {
 
 
 #' CIs of every method in METHODS_QUICK at study 1's Lambda index i and
-#' study 2's index j.
+#' study 2's index j: those of pair_cis() plus the cross-fit.
 pair_cis_quick <- function(arrays, i, j, cfg) {
-  full <- pick_fit(arrays, "full", i, j)
-  a <- pick_fit(arrays, "fold_a", i, j)
-  b <- pick_fit(arrays, "fold_b", i, j)
-  # Fold-A variances rescaled to fold-B size (derivations.tex,
-  # eq. est-oracleweight).
-  split <- fit_weights(a, a$n / b$n, cfg$z)
-  cis <- list(
-    convex_ci(full$lower, full$upper, full$s2_lower, full$s2_upper, 1, 1,
-              cfg$z),
-    convex_ci(full$lower, full$upper, full$s2_lower, full$s2_upper, 0, 0,
-              cfg$z),
-    intersection_ci(full$lower, full$upper, full$s2_lower, full$s2_upper,
-                    cfg$z_calibrated),
-    convex_ci(b$lower, b$upper, b$s2_lower, b$s2_upper, split$w_L, split$w_U,
-              cfg$z),
-    cross_fit_pair_ci(arrays, i, j, cfg),
-    clr_intersection_ci(full$lower, full$upper, full$s2_lower, full$s2_upper,
-                        cfg$p),
-    clr_convex_ci(full$lower, full$upper, full$s2_lower, full$s2_upper,
-                  cfg$p)
-  )
-  setNames(cis, METHODS_QUICK)
+  cis <- c(pair_cis(arrays, i, j, cfg),
+           setNames(list(cross_fit_pair_ci(arrays, i, j, cfg)), M7))
+  stopifnot(setequal(names(cis), METHODS_QUICK))
+  cis[METHODS_QUICK]  # Reorder by name into the reported order.
 }
 
 
@@ -409,26 +373,19 @@ check_single_study <- function(single, alpha) {
 }
 
 
-#' A method's joint coverage >= 1 - alpha up to 3 MC s.e. in every pair.
-check_method_valid <- function(summary, alpha, method) {
-  rows <- summary[summary$method == method, ]
-  zs <- (rows$cov_joint - (1 - alpha)) / rows$cov_joint_mcse
-  list(name = sprintf("%s joint coverage >= %g, all pairs", method,
-                      1 - alpha),
-       ok = min(zs) >= -3,
-       detail = sprintf("min coverage %.4f; %d of %d pairs below by > 3 MC s.e.",
-                        min(rows$cov_joint), sum(zs < -3), nrow(rows)))
-}
-
-
 #' Prints PASS/FAIL for each check; returns TRUE if all pass.
+#' check_method_valid() is defined in R/causal_sim.R.
 run_sanity_checks_quick <- function(estimates, summary, single, alpha) {
   checks <- list(check_collapse_at_one(estimates), check_monotone(estimates),
                  check_single_study(single, alpha),
                  check_calibrated_valid(summary, alpha),
+                 check_method_valid(summary, alpha, M10),
                  check_method_valid(summary, alpha, M3),
+                 check_method_valid(summary, alpha, M14),
                  check_method_valid(summary, alpha, M8),
                  check_method_valid(summary, alpha, M9),
+                 check_method_valid(summary, alpha, M12),
+                 check_method_valid(summary, alpha, M13),
                  check_method_valid(summary, alpha, M7))
   cat(paste("\nSanity checks (the cross-fit check may fail at ties, as in",
             "the toy; with forests at k = 15, study 1 is known to undercover",

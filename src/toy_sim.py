@@ -20,7 +20,11 @@ with the tighter limit at each end on fold B: the convex split CI with each
 weight restricted to {0, 1}. M11, the split band intersection, instead
 intersects the two estimated bands on fold A, i.e. keeps the dataset with
 the tighter estimated bound at each end regardless of its precision, and
-builds that dataset's CI on fold B.
+builds that dataset's CI on fold B. Since 2026-11-13: M12 and M13 are M8 and
+M9 with CLR's adaptive inequality selection step (analytical critical values
+for the kept bounds or weights; selection level gamma_n = 1 - 0.1 / log n
+with n = n_1 + n_2), and M14 intersects the two datasets' Sidak-calibrated
+CIs directly, which equals M8.
 
 Usage, from the repo root:
     python -m src.toy_sim [--seed 7] [--reps 5000] [--frac-a 0.3] [--no-plots]
@@ -68,6 +72,9 @@ M8 = "M8 intersection (CLR)"
 M9 = "M9 convex (CLR, no split)"
 M10 = "M10 intersection (split)"
 M11 = "M11 band intersection (split)"
+M12 = "M12 intersection (CLR, selection)"
+M13 = "M13 convex (CLR, selection)"
+M14 = "M14 intersection (calibrated CIs)"
 CROSS_FIT_FOLDS = {M7: 5}  # number of folds K per cross-fit method
 # Weights of a single dataset: 0 (dataset 2) or 1 (dataset 1). Optimising
 # the convex objective over these two weights alone selects, at each end,
@@ -137,6 +144,11 @@ class ToyConfig:
         It equals the CLR intersection's critical value (M8) by construction.
         """
         return ci_methods.max_of_two_quantile(1 - self.alpha / 2)
+
+    @property
+    def clr_gamma(self) -> float:
+        """CLR's selection level gamma_n = 1 - 0.1 / log(n_1 + n_2)."""
+        return ci_methods.clr_selection_level(sum(self.n))
 
     @property
     def true_lo(self) -> float:
@@ -352,6 +364,15 @@ def ci_by_method(
             *plug_in_weights(fold_a, BAND_INTERSECTION_Z,
                              w_grid=CORNER_WEIGHTS), z
         ),
+        M12: ci_methods.clr_intersection_selection_ci(
+            full.L, full.U, full.s2, 1 - cfg.alpha / 2, cfg.clr_gamma
+        ),
+        M13: ci_methods.clr_convex_selection_ci(
+            full.L, full.U, full.s2, 1 - cfg.alpha / 2, cfg.clr_gamma
+        ),
+        M14: ci_methods.calibrated_ci_intersection(
+            full.L, full.U, full.s2, cfg.z_calibrated
+        ),
     }
     for method, n_folds in CROSS_FIT_FOLDS.items():
         cis[method] = cross_fit_ci(Y, params, cfg, n_folds)
@@ -524,14 +545,16 @@ def _check_coverage_separable(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
 def _check_joint_coverage(df: pd.DataFrame, cfg: ToyConfig) -> list[Check]:
     """Joint coverage >= 1 - alpha in every cell (up to MC error).
 
-    Guaranteed for M6, for M10 and M11 by the sample split (their weights
-    depend on fold A only), and asymptotically for M8 and M9. For the
-    cross-fitted methods it is not guaranteed near ties (fold estimates and
-    weights are dependent), so a FAIL there is a finding, not a bug.
+    Guaranteed for M6 and M14 (= M8), for M10 and M11 by the sample split
+    (their weights depend on fold A only), and asymptotically for M8, M9 and
+    their selection versions M12 and M13. For the cross-fitted methods it is
+    not guaranteed near ties (fold estimates and weights are dependent), so
+    a FAIL there is a finding, not a bug.
     """
     nominal = 1 - cfg.alpha
     checks = []
-    for method in (M6, *CROSS_FIT_FOLDS, M8, M9, *SPLIT_SELECTION_METHODS):
+    for method in (M6, *CROSS_FIT_FOLDS, M8, M9, *SPLIT_SELECTION_METHODS,
+                   M12, M13, M14):
         cells = df[df.method == method]
         # Cells with coverage 1 have MC SE 0 and give z = +inf, which passes.
         zs = (cells.cov_joint - nominal) / cells.cov_joint_mcse

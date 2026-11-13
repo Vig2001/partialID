@@ -11,8 +11,23 @@
 #   dataset 1, dataset 2        each study alone (full-sample fits; DGK's CI)
 #   intersection (calibrated)   full-sample fits, z = qnorm(sqrt(1 - alpha/2))
 #                               (Sidak over the two independent studies)
+#   intersection (split)        at each end, the study whose fold-A CI limit
+#                               is tighter (weights restricted to {0, 1}),
+#                               its CI from fold B
 #   convex (split)              weights from fold A, CI from fold B (DVDS
 #                               fitted separately in each fold)
+#   intersection (CLR)          CLR intersection bounds, every bound kept:
+#                               the intersection of the two studies' CIs
+#                               with the Sidak critical value
+#   convex (CLR)                CLR over all convex combinations, no split
+#   intersection (calibrated CIs)  the two studies' CIs with the Sidak critical
+#                               value, intersected directly (equals the CLR
+#                               intersection; shown side by side in the paper)
+#   intersection (CLR, selection), convex (CLR, selection)
+#                               the CLR methods with CLR's adaptive inequality
+#                               selection step, gamma_n = 1 - 0.1 / log(n_1 +
+#                               n_2), analytical critical values
+# The CLR methods use level p = 1 - alpha/2 at each end, as in src/toy_sim.py.
 #
 # Usage, from the repo root:
 #   Rscript R/causal_sim.R [--seed 1] [--reps 1000] [--n1 2000] [--n2 500]
@@ -53,8 +68,14 @@ FIT_LABELS <- c(full = "intersection", fold_a = "convex split A",
 M5_D1 <- "dataset 1"
 M5_D2 <- "dataset 2"
 M6 <- "intersection (calibrated)"
+M10 <- "intersection (split)"
 M3 <- "convex (split)"
-METHODS <- c(M5_D1, M5_D2, M6, M3)
+M8 <- "intersection (CLR)"
+M9 <- "convex (CLR)"
+M12 <- "intersection (CLR, selection)"
+M13 <- "convex (CLR, selection)"
+M14 <- "intersection (calibrated CIs)"
+METHODS <- c(M5_D1, M5_D2, M6, M10, M3, M14, M8, M9, M12, M13)
 # Columns of the short summary.csv; every column is in summary_full.csv.
 SHORT_COLUMNS <- c("outcome", "lambda_1", "lambda_2", "method", "cov_joint",
                    "ci_width", "est_band_width", "true_band_width")
@@ -186,6 +207,8 @@ make_config <- function(args) {
        # intersection's critical value (Bonferroni qnorm(1 - alpha / 4)
        # before 2026-11-12).
        z_calibrated = max_of_two_quantile(1 - args$alpha / 2),
+       p = 1 - args$alpha / 2,  # Level of each one-sided CLR end.
+       gamma = clr_selection_level(sum(n)),  # CLR selection level gamma_n.
        lambdas = lambdas,
        noise_scale = c(1, args$noise_scale_2),
        binary_denominator = c(args$binary_denominator_1, 1),
@@ -315,34 +338,64 @@ bound_arrays <- function(estimates, fits = FITS) {
 }
 
 
-#' CIs of every method for study 1 at Lambda index i, study 2 at index j.
+#' The R x 2 matrices (study 1 at Lambda index i, study 2 at index j) of
+#' one fit, for each column of bound_arrays().
+pick_fit <- function(arrays, fit, i, j) {
+  lapply(arrays[[fit]], function(a) cbind(a[[1]][, i], a[[2]][, j]))
+}
+
+
+#' Plug-in weights (omega_L, omega_U) from one fit, with its variances
+#' rescaled by `scale` (an R x 2 matrix) to the size the final CI uses.
 #'
-#' @return Named list of CI lists (see ci_methods.R), one per method, in the
-#'   order of METHODS.
-pair_cis <- function(arrays, i, j, z, z_calibrated) {
-  # R x 2 matrices: column 1 is study 1 at Lambda_i, column 2 study 2 at
-  # Lambda_j.
-  pick <- function(fit) {
-    lapply(arrays[[fit]], function(a) cbind(a[[1]][, i], a[[2]][, j]))
-  }
-  full <- pick("full")
-  a <- pick("fold_a")
-  b <- pick("fold_b")
+#' @param w_grid Candidate weights on study 1; CORNER_WEIGHTS selects one
+#'   study per end, the one with the tighter CI limit.
+fit_weights <- function(fit, scale, z, w_grid = W_GRID) {
+  list(w_L = optimal_weight_grid(fit$lower[, 1], fit$lower[, 2],
+                                 fit$s2_lower[, 1] * scale[, 1],
+                                 fit$s2_lower[, 2] * scale[, 2],
+                                 lower = TRUE, z, w_grid),
+       w_U = optimal_weight_grid(fit$upper[, 1], fit$upper[, 2],
+                                 fit$s2_upper[, 1] * scale[, 1],
+                                 fit$s2_upper[, 2] * scale[, 2],
+                                 lower = FALSE, z, w_grid))
+}
+
+
+#' CIs of the methods computed from the full-sample and split fits, for
+#' study 1 at Lambda index i and study 2 at index j.
+#'
+#' @return Named list of CI lists (see ci_methods.R), one per method in
+#'   METHODS, in that order.
+pair_cis <- function(arrays, i, j, cfg) {
+  full <- pick_fit(arrays, "full", i, j)
+  a <- pick_fit(arrays, "fold_a", i, j)
+  b <- pick_fit(arrays, "fold_b", i, j)
   # Weights on fold A: fold-A means, variances rescaled to fold-B size, i.e.
   # var(phi_A) / n_B (derivations.tex, eq. est-oracleweight).
-  scale <- a$n / b$n
-  w_L <- optimal_weight_grid(a$lower[, 1], a$lower[, 2],
-                             a$s2_lower[, 1] * scale[, 1],
-                             a$s2_lower[, 2] * scale[, 2], lower = TRUE, z)
-  w_U <- optimal_weight_grid(a$upper[, 1], a$upper[, 2],
-                             a$s2_upper[, 1] * scale[, 1],
-                             a$s2_upper[, 2] * scale[, 2], lower = FALSE, z)
+  split <- fit_weights(a, a$n / b$n, cfg$z)
+  corner <- fit_weights(a, a$n / b$n, cfg$z, CORNER_WEIGHTS)
   cis <- list(
-    convex_ci(full$lower, full$upper, full$s2_lower, full$s2_upper, 1, 1, z),
-    convex_ci(full$lower, full$upper, full$s2_lower, full$s2_upper, 0, 0, z),
+    convex_ci(full$lower, full$upper, full$s2_lower, full$s2_upper, 1, 1,
+              cfg$z),
+    convex_ci(full$lower, full$upper, full$s2_lower, full$s2_upper, 0, 0,
+              cfg$z),
     intersection_ci(full$lower, full$upper, full$s2_lower, full$s2_upper,
-                    z_calibrated),
-    convex_ci(b$lower, b$upper, b$s2_lower, b$s2_upper, w_L, w_U, z)
+                    cfg$z_calibrated),
+    convex_ci(b$lower, b$upper, b$s2_lower, b$s2_upper, corner$w_L,
+              corner$w_U, cfg$z),
+    convex_ci(b$lower, b$upper, b$s2_lower, b$s2_upper, split$w_L, split$w_U,
+              cfg$z),
+    calibrated_ci_intersection(full$lower, full$upper, full$s2_lower,
+                               full$s2_upper, cfg$z_calibrated),
+    clr_intersection_ci(full$lower, full$upper, full$s2_lower, full$s2_upper,
+                        cfg$p),
+    clr_convex_ci(full$lower, full$upper, full$s2_lower, full$s2_upper,
+                  cfg$p),
+    clr_intersection_selection_ci(full$lower, full$upper, full$s2_lower,
+                                  full$s2_upper, cfg$p, cfg$gamma),
+    clr_convex_selection_ci(full$lower, full$upper, full$s2_lower,
+                            full$s2_upper, cfg$p, cfg$gamma)
   )
   setNames(cis, METHODS)
 }
@@ -381,7 +434,7 @@ summarise_estimates <- function(estimates, truth, cfg) {
       for (j in band_2$lambda_index) {
         true_lo <- max(band_1$lower[i], band_2$lower[j])
         true_hi <- min(band_1$upper[i], band_2$upper[j])
-        cis <- pair_cis(arrays, i, j, cfg$z, cfg$z_calibrated)
+        cis <- pair_cis(arrays, i, j, cfg)
         for (method in names(cis)) {
           rows[[length(rows) + 1]] <- data.frame(
             outcome = outcome,
@@ -499,10 +552,28 @@ check_calibrated_valid <- function(summary, alpha) {
 }
 
 
+#' A method's joint coverage >= 1 - alpha up to 3 MC s.e. in every pair.
+check_method_valid <- function(summary, alpha, method) {
+  rows <- summary[summary$method == method, ]
+  zs <- (rows$cov_joint - (1 - alpha)) / rows$cov_joint_mcse
+  list(name = sprintf("%s joint coverage >= %g, all pairs", method,
+                      1 - alpha),
+       ok = min(zs) >= -3,
+       detail = sprintf("min coverage %.4f; %d of %d pairs below by > 3 MC s.e.",
+                        min(rows$cov_joint), sum(zs < -3), nrow(rows)))
+}
+
+
 #' Prints PASS/FAIL for each check; returns TRUE if all pass.
 run_sanity_checks <- function(estimates, summary, alpha) {
   checks <- list(check_collapse_at_one(estimates), check_monotone(estimates),
-                 check_calibrated_valid(summary, alpha))
+                 check_calibrated_valid(summary, alpha),
+                 check_method_valid(summary, alpha, M10),
+                 check_method_valid(summary, alpha, M14),
+                 check_method_valid(summary, alpha, M8),
+                 check_method_valid(summary, alpha, M9),
+                 check_method_valid(summary, alpha, M12),
+                 check_method_valid(summary, alpha, M13))
   cat("\nSanity checks\n")
   for (check in checks) {
     cat(sprintf("[%s] %s: %s\n", if (check$ok) "PASS" else "FAIL",
