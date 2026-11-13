@@ -118,13 +118,14 @@ def plot_width_ratio_box_panels(
     colours: Mapping[str, str],
     out_path: Path,
     log_x: bool = False,
-    figsize: tuple[float, float] = (6.0, 2.4),
+    figsize: tuple[float, float] = (6.5, 2.4),
     xlabel: str = "CI width / narrowest valid CI width in the same cell",
 ) -> None:
     """Side-by-side panels of plot_width_ratio_boxes, one per run.
 
     The panels share the method axis, labelled on the left panel only; each
-    has its own ratio axis, as the runs' ratios differ in range.
+    has its own ratio axis, as the runs' ratios differ in range. The row of
+    panels is centred in the figure (centre_axes_row()).
 
     Args:
         panels: (ratios, title) of each panel, left to right; ratios as in
@@ -134,7 +135,7 @@ def plot_width_ratio_box_panels(
         colours: Colour of each method, keyed by method.
         out_path: Where to save the figure (format from the suffix).
         log_x: Whether the ratio axes are logarithmic.
-        figsize: Figure size in inches; 6.0 in is the paper's text width.
+        figsize: Figure size in inches; 6.5 in is the paper's text width.
         xlabel: Label of each ratio axis.
 
     Raises:
@@ -153,10 +154,36 @@ def plot_width_ratio_box_panels(
         axes[0, 0].set_yticks(_box_positions(methods), labels)
         fig.tight_layout()
         fig.canvas.draw()
+        centre_axes_row(fig, axes[0])
+        fig.canvas.draw()
         for ax in axes[0]:
             thin_overlapping_xticks(ax)
         save_centred(fig, out_path)
         plt.close(fig)
+
+
+def centre_axes_row(fig: plt.Figure, axes: Sequence[plt.Axes]) -> None:
+    """Centres a row of axes in the figure, as centre_axes() does for one.
+
+    The method labels left of the first panel would otherwise put the row
+    right of centre. Both sides get the larger of the two margins; the
+    panels are narrowed by the same factor and the gaps between them kept.
+    Mutates fig and the axes.
+    """
+    renderer = fig.canvas.get_renderer()
+    to_figure = fig.transFigure.inverted()
+    content = transforms.Bbox.union(
+        [ax.get_tightbbox(renderer).transformed(to_figure) for ax in axes])
+    boxes = [ax.get_position() for ax in axes]
+    left, right = boxes[0].x0, boxes[-1].x1
+    margin = max(left - content.x0, content.x1 - right) + 0.01
+    gaps = [b.x0 - a.x1 for a, b in zip(boxes, boxes[1:])]
+    scale = (1 - 2 * margin - sum(gaps)) / (right - left - sum(gaps))
+    x0 = margin
+    for ax, box, gap in zip(axes, boxes, [*gaps, 0.0]):
+        width = box.width * scale
+        ax.set_position([x0, box.y0, width, box.height])
+        x0 += width + gap
 
 
 def thin_overlapping_xticks(ax: plt.Axes, pad_pt: float = 4.0) -> None:
