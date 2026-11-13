@@ -82,6 +82,10 @@ TABLE_METHODS_CLR = (toy_sim.M3, toy_sim.M7, toy_sim.M8)
 # {0, 1}, selected by CI limit (M10) or by estimated bound (M11), and not
 # restricted (M3).
 TABLE_METHODS_SPLIT_INTERSECTION = (toy_sim.M10, toy_sim.M11, toy_sim.M3)
+# Appendix table since 2026-11-13: the split band intersection and convex
+# split CIs against the oracle convex CI (the split intersection, M10, is in
+# the main table). Caption macros keep the \toySplitInt prefix.
+TABLE_METHODS_BAND_ORACLE = (toy_sim.M11, toy_sim.M3, toy_sim.M2)
 # Paper tables since 2026-11-13: the comparator sets, sample splitting (split
 # intersection, convex split, convex cross-fit), simultaneous inference
 # (intersection of calibrated CIs, CLR intersection, convex CLR; the first two
@@ -323,6 +327,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                               "split), written to "
                               "width_coverage_split_intersection_r<ratios>"
                               ".tex; caption macros start \\toySplitInt.")
+    columns.add_argument("--band-oracle", action="store_true",
+                         help="Columns M11 (split band intersection), M3 "
+                              "(convex split) and M2 (oracle convex), "
+                              "written to <prefix>_band_oracle_r<ratios>.tex; "
+                              "caption macros start \\toySplitInt.")
     columns.add_argument("--comparator-sets", action="store_true",
                          help="Columns M10 (split intersection), M3, M7 "
                               "(sample splitting), M14 (calibrated CIs "
@@ -373,7 +382,7 @@ def main() -> None:
     plot_joint_coverage(df, args.ratio, cfg, fig_path)
     ratios = "-".join(f"{r:g}" for r in args.table_ratios)
     macro_prefix = MACRO_PREFIX_CLR if args.clr else MACRO_PREFIX
-    if args.split_intersection:
+    if args.split_intersection or args.band_oracle:
         macro_prefix = MACRO_PREFIX_SPLIT_INTERSECTION
     if args.by_dataset and args.with_oracle:
         methods = TABLE_METHODS_BY_DATASET_ORACLE
@@ -390,6 +399,9 @@ def main() -> None:
     elif args.split_intersection:
         methods = TABLE_METHODS_SPLIT_INTERSECTION
         table_name = f"split_intersection_r{ratios}"
+    elif args.band_oracle:
+        methods = TABLE_METHODS_BAND_ORACLE
+        table_name = f"band_oracle_r{ratios}"
     elif args.comparator_sets and args.with_oracle:
         methods = TABLE_METHODS_COMPARATORS_ORACLE
         table_name = f"comparators_r{ratios}_oracle"
