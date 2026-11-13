@@ -2,11 +2,21 @@
 
 import numpy as np
 import pytest
+from scipy import stats
 
 from src import toy_sim
 from src.helpers import weight_optimisers
 
 Z = 1.96
+
+
+def test_calibrated_critical_value_is_sidak():
+    # Sidak over two independent datasets at each end: Phi(z)^2 = 1 - alpha/2.
+    # Catches a silent return to Bonferroni, Phi^{-1}(1 - alpha / 4).
+    cfg = toy_sim.ToyConfig()
+    np.testing.assert_allclose(
+        cfg.z_calibrated, stats.norm.ppf(np.sqrt(1 - cfg.alpha / 2)),
+        rtol=1e-12)
 
 
 def test_population_bands_intersect_in_the_true_band():

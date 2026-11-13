@@ -9,7 +9,7 @@ from src.helpers import ci_methods
 
 ALPHA = 0.05
 Z = stats.norm.ppf(1 - ALPHA / 2)
-Z_CALIBRATED = stats.norm.ppf(1 - ALPHA / 4)
+Z_CALIBRATED = stats.norm.ppf(np.sqrt(1 - ALPHA / 2))  # Sidak, per end
 P_END = 1 - ALPHA / 2  # per-end level of a Bonferroni joint CI
 
 
@@ -153,12 +153,14 @@ def test_clr_ci_lower_end_mirrors_upper_end():
 
 def test_clr_ci_never_wider_than_calibrated_intersection():
     # Its end is a min over corrected bounds, so at most the corrected bound
-    # at the raw argmin, and k = Phi^{-1}(sqrt(1 - alpha / 2)) < z_calibrated.
+    # at the raw argmin; k = Phi^{-1}(sqrt(1 - alpha / 2)) = z_calibrated.
     L, U, s2 = _random_bounds(np.random.default_rng(5), n_reps=5000)
     clr = ci_methods.clr_intersection_ci(L, U, s2, P_END)
     calibrated = ci_methods.intersection_ci(L, U, s2, Z_CALIBRATED)
-    assert np.all(clr.hi <= calibrated.hi)
-    assert np.all(clr.lo >= calibrated.lo)
+    # Equal whenever both pick the same dataset, so allow rounding error.
+    tol = 1e-12
+    assert np.all(clr.hi <= calibrated.hi + tol)
+    assert np.all(clr.lo >= calibrated.lo - tol)
 
 
 def test_clr_ci_per_end_coverage_at_a_tie_is_p():
@@ -201,7 +203,7 @@ def _quadrant_quantile(level):
 def test_critical_values_solve_their_cdf_equations():
     for level in (0.5, P_END):
         # The max of two independent N(0, 1): Phi(k)^2 = level.
-        k_two = ci_methods._max_of_two_quantile(level)
+        k_two = ci_methods.max_of_two_quantile(level)
         np.testing.assert_allclose(stats.norm.cdf(k_two) ** 2, level,
                                    rtol=1e-12)
         # The sup over every weight (the whole quadrant).

@@ -5,8 +5,9 @@ attains the true lower end, dataset 2 the true upper end, so their intersection
 is exactly the true band. We compare the naive intersection CI with the convex
 combination CI (oracle weights; sample-split weights; no split, i.e. weights
 and CI from the same data), and with a calibrated intersection CI that uses
-z = Phi^{-1}(1 - alpha / 4): Bonferroni over 2 datasets x 2 ends, so it is
-valid whichever dataset attains each end. A cross-fitted convex CI (K = 5
+z = Phi^{-1}(sqrt(1 - alpha / 2)): Sidak over the 2 independent datasets at
+each end (Bonferroni over the 2 ends), so it is valid whichever dataset
+attains each end. A cross-fitted convex CI (K = 5
 folds: weights from the other folds, bounds from each fold, averaged) removes
 the split method's loss of evaluation data. The CLR intersection CI
 (Chernozhukov, Lee and Rosen, 2013) corrects each bound before taking the
@@ -91,7 +92,7 @@ class ToyConfig:
         delta: Half-width of the true band.
         alpha: Nominal level. Each end uses z = Phi^{-1}(1 - alpha / 2),
             Bonferroni for the joint band; the calibrated intersection uses
-            z_calibrated = Phi^{-1}(1 - alpha / 4).
+            z_calibrated = Phi^{-1}(sqrt(1 - alpha / 2)).
         n: Dataset sizes (n_1, n_2).
         se1: Standard deviation of Ybar_1.
         frac_a: Fold-A fraction for the sample-split method.
@@ -128,8 +129,14 @@ class ToyConfig:
 
     @property
     def z_calibrated(self) -> float:
-        """Bonferroni over the 4 one-sided (dataset, end) events."""
-        return stats.norm.ppf(1 - self.alpha / 4)
+        """Sidak over the 2 independent datasets at each end, level 1 - alpha/2.
+
+        Each end covers if both datasets' corrected bounds do, with
+        probability Phi(z)^2 = 1 - alpha / 2 (independent datasets); the
+        Bonferroni value Phi^{-1}(1 - alpha / 4) was used before 2026-11-12.
+        It equals the CLR intersection's critical value (M8) by construction.
+        """
+        return ci_methods.max_of_two_quantile(1 - self.alpha / 2)
 
     @property
     def true_lo(self) -> float:

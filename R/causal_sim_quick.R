@@ -3,7 +3,8 @@
 # DGK's forests, so that every valid method of the toy, and cross-fitting,
 # runs in minutes. Per outcome and pair (Lambda_1, Lambda_2):
 #   dataset 1, dataset 2        each study alone (full-sample fits)
-#   intersection (calibrated)   full-sample fits, z = Phi^{-1}(1 - alpha/4)
+#   intersection (calibrated)   full-sample fits, z = qnorm(sqrt(1 - alpha/2))
+#                               (Sidak over the two independent studies)
 #   convex (split)              weights from fold A, CI from fold B
 #   convex (cross-fit)          K folds per study, standard cross-fitting:
 #                               for each fold f, nuisance models fitted on
@@ -288,7 +289,7 @@ pick_fit <- function(arrays, fit, i, j) {
 }
 
 
-#' Plug-in weights (omega_0, omega_1) from one fit, with its variances
+#' Plug-in weights (omega_L, omega_U) from one fit, with its variances
 #' rescaled by `scale` (an R x 2 matrix) to the size the final CI uses.
 fit_weights <- function(fit, scale, z) {
   list(w_L = optimal_weight_grid(fit$lower[, 1], fit$lower[, 2],

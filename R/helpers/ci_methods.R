@@ -8,7 +8,7 @@
 # Bonferroni joint CI for the band. Each method returns a list with
 #   lo, hi        CI endpoints;
 #   L_hat, U_hat  fused bound estimates;
-#   w_L, w_U      weight on study 1 at the lower (omega_0) and upper (omega_1)
+#   w_L, w_U      weight on study 1 at the lower (omega_L) and upper (omega_U)
 #                 end.
 
 W_GRID <- seq(0, 1, length.out = 1001)  # Candidate weights, spacing 1e-3.

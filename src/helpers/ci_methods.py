@@ -250,10 +250,12 @@ def _clr_upper(
     return ci_end, estimate, attained
 
 
-def _max_of_two_quantile(level: float) -> float:
+def max_of_two_quantile(level: float) -> float:
     """The level-quantile of max(Z_1, Z_2), Z_1 and Z_2 independent N(0, 1).
 
-    P(max(Z_1, Z_2) <= k) = Phi(k)^2, so k = Phi^{-1}(sqrt(level)).
+    P(max(Z_1, Z_2) <= k) = Phi(k)^2, so k = Phi^{-1}(sqrt(level)). At level
+    1 - alpha / 2 it is also the Sidak critical value of the calibrated
+    intersection CI (src/toy_sim.py, ToyConfig.z_calibrated).
     """
     return float(stats.norm.ppf(np.sqrt(level)))
 
@@ -290,7 +292,7 @@ def clr_intersection_ci(
     if not 0 < p < 1:
         raise ValueError(f"p must lie in (0, 1), got {p=}")
     se = np.sqrt(s2)
-    k_p, k_half = _max_of_two_quantile(p), _max_of_two_quantile(0.5)
+    k_p, k_half = max_of_two_quantile(p), max_of_two_quantile(0.5)
     hi, U_hat, j_hi = _clr_upper(U, se, k_p, k_half)
     # max_j L_j = -min_j (-L_j), so the lower end is the upper end of -L.
     neg_lo, neg_L_hat, j_lo = _clr_upper(-L, se, k_p, k_half)

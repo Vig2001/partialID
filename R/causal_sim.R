@@ -9,7 +9,8 @@
 # cloned in external/). CIs for the fused band [max_k L_k, min_k U_k] are
 # compared over all pairs (Lambda_1, Lambda_2), separately per outcome:
 #   dataset 1, dataset 2        each study alone (full-sample fits; DGK's CI)
-#   intersection (calibrated)   full-sample fits, z = Phi^{-1}(1 - alpha/4)
+#   intersection (calibrated)   full-sample fits, z = qnorm(sqrt(1 - alpha/2))
+#                               (Sidak over the two independent studies)
 #   convex (split)              weights from fold A, CI from fold B (DVDS
 #                               fitted separately in each fold)
 #
@@ -181,7 +182,11 @@ make_config <- function(args) {
                                      args$workers))
   list(seed = args$seed, reps = args$reps, n = n, frac_a = args$frac_a,
        alpha = args$alpha, z = qnorm(1 - args$alpha / 2),
-       z_calibrated = qnorm(1 - args$alpha / 4), lambdas = lambdas,
+       # Sidak over the two independent studies at each end, the CLR
+       # intersection's critical value (Bonferroni qnorm(1 - alpha / 4)
+       # before 2026-11-12).
+       z_calibrated = max_of_two_quantile(1 - args$alpha / 2),
+       lambdas = lambdas,
        noise_scale = c(1, args$noise_scale_2),
        binary_denominator = c(args$binary_denominator_1, 1),
        outcomes = OUTCOMES[OUTCOMES %in% outcomes],
