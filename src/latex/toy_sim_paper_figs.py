@@ -8,10 +8,11 @@ Usage, from the repo root:
         [--ratios 1 3 5] [--out-dir <dir>]
 Outputs, in src/outputs/toy_sim/ (or --out-dir):
     coverage_by_gap_r<ratios>.pdf  joint coverage of the true band against
-        equal gaps g_L = g_U, one panel per ratio r (e.g. _r1-3-5);
-        intersection CIs dashed (M1 naive, M6 calibrated, M8 CLR), convex
-        CIs solid (M3 split, M7 cross-fit, M9 CLR); grey band: nominal
-        +/- 2 binomial MC s.e. Sized for the 6.0 in PMLR text width.
+        equal gaps g_L = g_U, one panel per ratio r (e.g. _r1-3-5), for the
+        paper's comparator sets (since 2026-11-13): intersection CIs dashed
+        (M10 split intersection, M8 CLR), convex CIs solid (M3 split, M7
+        cross-fit, M9 CLR); grey band: nominal +/- 2 binomial MC s.e. Sized
+        for the 6.0 in PMLR text width.
     joint_coverage_naive_r<ratios>.pdf  joint coverage (%) of the true band
         over (g_L, g_U) for the naive intersection CI (M1), one heatmap per
         ratio r in a row; one colour scale for all panels, centred at the
@@ -29,18 +30,19 @@ from src import toy_sim
 from src.plotting import toy_sim_plots
 
 DEFAULT_RESULTS = toy_sim.DEFAULT_OUT_DIR / "results.csv"
-# Each dataset alone is left out: it is conservative for the true band.
+# The paper's comparator sets (since 2026-11-13): sample splitting, then
+# simultaneous inference. The naive and calibrated intersections and each
+# dataset alone are left out.
 COVERAGE_METHODS = (
-    toy_sim.M1, toy_sim.M6, toy_sim.M8, toy_sim.M3, toy_sim.M7, toy_sim.M9,
+    toy_sim.M10, toy_sim.M3, toy_sim.M7, toy_sim.M8, toy_sim.M9,
 )
-INTERSECTION_METHODS = frozenset({toy_sim.M1, toy_sim.M6, toy_sim.M8})
+INTERSECTION_METHODS = frozenset({toy_sim.M10, toy_sim.M8})
 # Legend labels, as in the paper's table headers.
 PAPER_LABELS = {
-    toy_sim.M1: "Intersection, naive",
-    toy_sim.M6: "Intersection, calibrated",
-    toy_sim.M8: "Intersection, CLR",
+    toy_sim.M10: "Intersection CIs, split",
     toy_sim.M3: "Convex, split",
     toy_sim.M7: "Convex, cross-fit",
+    toy_sim.M8: "CLR",
     toy_sim.M9: "Convex, CLR",
 }
 HEATMAP_FIGSIZE = (6.0, 2.4)

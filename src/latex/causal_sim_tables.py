@@ -2,27 +2,41 @@
 
 Does not rerun the simulation: run `Rscript R/causal_sim.R` first.
 
-Rows: for each Lambda_1 in --lambdas-1, the --top values of Lambda_2 at which
-the convex split CI is narrowest relative to the calibrated intersection CI,
-among the pairs where both have valid joint coverage. Columns: the methods in
---methods (default: each dataset alone, the calibrated intersection and the
-convex split).
+Rows: for each Lambda_1 in --lambdas-1, the --top values of Lambda_2 chosen by
+--row-rule (the rows do not depend on --methods):
+    calibrated (default)  those at which the convex split CI is narrowest
+        relative to the calibrated intersection CI, among the pairs where both
+        have valid joint coverage;
+    convex-wins (since 2026-11-13)  among the pairs where the convex split,
+        split intersection, convex CLR and CLR intersection CIs are all valid,
+        the convex split CI is narrower than the split intersection CI and the
+        convex CLR CI narrower than the CLR intersection CI, those where the
+        larger of the two excess-width ratios (convex over counterpart) is
+        smallest; fewer than --top where fewer pairs qualify.
+Columns: the methods in --methods (default: each dataset alone, the calibrated
+intersection and the convex split).
 
 Usage, from the repo root:
     python -m src.latex.causal_sim_tables [--summary <summary_full.csv>]
         [--outcome continuous] [--lambdas-1 3 3.5 4 4.5 5] [--top 3]
-        [--metric ci|band] [--methods dataset1 dataset2 intersection split
-        crossfit clr convexclr] (default: the first four)
+        [--metric ci|excess|band] [--row-rule calibrated|convex-wins]
+        [--methods dataset1 dataset2 intersection
+        splitint split crossfit calint clr convexclr clrsel convexclrsel]
+        (default: dataset1 dataset2 intersection split)
         [--macro-decimals 3] [--macro-prefix causal] [--alpha 0.05]
 Outputs, beside the summary:
     width_coverage_best_<outcome>.tex  rows: Lambda_1, Lambda_2, then
         width (coverage) per method
+    excess_coverage_best_<outcome>.tex rows: Lambda_1, Lambda_2, true band
+        width, then excess width (CI width minus the true band width, the
+        same for every method) and coverage per method
     band_width_best_<outcome>.tex      rows: Lambda_1, Lambda_2, true band
         width, then mean estimated band width per method
     <table>_macros.tex                 median, min and max MC s.e. in the
         table, as LaTeX macros for the caption, named by outcome:
         \\<prefix><Outcome>WidthMcse{Median,Min,Max} and
-        \\<prefix><Outcome>CovMcse{...} (ci) or
+        \\<prefix><Outcome>CovMcse{...} (ci and excess: the excess width has
+        the CI width's MC s.e.) or
         \\<prefix><Outcome>BandMcse{...} (band), e.g.
         \\causalBinaryWidthMcseMedian; a different --macro-prefix (e.g.
         causalForest) lets two runs' tables share a document
@@ -44,22 +58,36 @@ DATASET_1 = "dataset 1"
 DATASET_2 = "dataset 2"
 INTERSECTION = "intersection (calibrated)"
 CONVEX_SPLIT = "convex (split)"
-# CLI name -> method name in summary_full.csv. The last three exist only in
-# runs of R/causal_sim_quick.R.
+# CLI name -> method name in summary_full.csv. The cross-fit exists only in
+# runs of R/causal_sim_quick.R; the split intersection and the CLR methods
+# in runs summarised since 2026-11-13.
 METHOD_NAMES = {"dataset1": DATASET_1, "dataset2": DATASET_2,
-                "intersection": INTERSECTION, "split": CONVEX_SPLIT,
+                "intersection": INTERSECTION,
+                "splitint": "intersection (split)",
+                "split": CONVEX_SPLIT,
                 "crossfit": "convex (cross-fit)",
                 "clr": "intersection (CLR)",
-                "convexclr": "convex (CLR)"}
-# Default columns: the methods of R/causal_sim.R.
+                "convexclr": "convex (CLR)",
+                "calint": "intersection (calibrated CIs)",
+                "clrsel": "intersection (CLR, selection)",
+                "convexclrsel": "convex (CLR, selection)"}
+# Default columns: the original methods of R/causal_sim.R.
 DEFAULT_METHODS = ["dataset1", "dataset2", "intersection", "split"]
 # Start of every caption-macro name, unless --macro-prefix is given.
 DEFAULT_MACRO_PREFIX = "causal"
 # Caption macros: name after \<prefix><Outcome> -> column of MC s.e.
 CAPTION_MACROS = {
     "ci": {"WidthMcse": "width_mcse", "CovMcse": "cov_joint_mcse"},
+    "excess": {"WidthMcse": "width_mcse", "CovMcse": "cov_joint_mcse"},
     "band": {"BandMcse": "band_width_mcse"},
 }
+# Output name prefix for each metric.
+TABLE_PREFIXES = {"ci": "width_coverage", "excess": "excess_coverage",
+                  "band": "band_width"}
+ROW_RULES = ("calibrated", "convex-wins")
+# --row-rule convex-wins: each convex CI and the CI it must beat.
+CONVEX_PAIRS = (("convex (split)", "intersection (split)"),
+                ("convex (CLR)", "intersection (CLR)"))
 UNDERCOVER_SES = toy_sim_slide_figs.UNDERCOVER_SES
 LAMBDA_TOL = 1e-9  # Lambda values are read back from CSV
 
@@ -95,15 +123,75 @@ def best_pairs(
     width = fused.pivot_table(index=["lambda_1", "lambda_2"],
                               columns="method", values="width")
     ratio = (width[CONVEX_SPLIT] / width[INTERSECTION])[both_valid]
+    return smallest_per_lambda_1(ratio, df, lambdas_1, top)
+
+
+def convex_win_pairs(
+    df: pd.DataFrame, lambdas_1: Sequence[float], top: int, nominal: float
+) -> pd.DataFrame:
+    """The pairs where both convex CIs beat their counterparts most clearly.
+
+    A pair qualifies when the four CIs of CONVEX_PAIRS have valid coverage
+    and each convex CI has a smaller excess width (CI width minus the true
+    band width, hence also a smaller width) than its counterpart. Its score
+    is the larger of the two excess-width ratios, convex over counterpart,
+    so a small score means that both convex CIs gain.
+
+    Args:
+        df: summary_full.csv rows for one outcome.
+        lambdas_1: Values of Lambda_1 to tabulate; each must be on the grid.
+        top: Largest number of Lambda_2 values kept per Lambda_1; fewer are
+            kept (with a printed note) where fewer pairs qualify.
+        nominal: Nominal joint coverage, 1 - alpha.
+
+    Returns:
+        Columns lambda_1, lambda_2 and ratio (the score), grouped by lambda_1
+        in the order given and sorted by lambda_2 within each group.
+
+    Raises:
+        ValueError: If a Lambda_1 is not on the grid or no pair qualifies
+            there.
+    """
+    methods = [name for pair in CONVEX_PAIRS for name in pair]
+    sub = df[df.method.isin(methods)]
+    sub = sub.assign(valid=valid_coverage(sub, nominal),
+                     excess=sub.width - sub.true_band_width)
+    cells = ["lambda_1", "lambda_2"]
+    all_valid = sub.groupby(cells).valid.all()
+    excess = sub.pivot_table(index=cells, columns="method", values="excess")
+    ratios = pd.concat([excess[convex] / excess[other]
+                        for convex, other in CONVEX_PAIRS], axis=1)
+    positive = (excess[[other for _, other in CONVEX_PAIRS]] > 0).all(axis=1)
+    qualifies = all_valid & positive & (ratios < 1).all(axis=1)
+    score = ratios.max(axis=1)[qualifies]
+    return smallest_per_lambda_1(score, df, lambdas_1, top)
+
+
+def smallest_per_lambda_1(
+    ratio: pd.Series, df: pd.DataFrame, lambdas_1: Sequence[float], top: int
+) -> pd.DataFrame:
+    """Up to `top` pairs with the smallest ratio for each Lambda_1.
+
+    Args:
+        ratio: Ratio indexed by (lambda_1, lambda_2), for eligible pairs only.
+        df: summary_full.csv rows for one outcome (for the error message).
+        lambdas_1: Values of Lambda_1, in the order of the row groups.
+        top: Largest number of pairs per Lambda_1.
+
+    Raises:
+        ValueError: If a Lambda_1 has no eligible pair.
+    """
     ratio = ratio.rename("ratio").reset_index()
     groups = []
     for lambda_1 in lambdas_1:
         rows = ratio[np.isclose(ratio.lambda_1, lambda_1, atol=LAMBDA_TOL)]
         if rows.empty:
             raise ValueError(
-                f"No valid pairs at {lambda_1=}; grid has "
+                f"No eligible pairs at {lambda_1=}; grid has "
                 f"{sorted(set(df.lambda_1))}"
             )
+        if len(rows) < top:
+            print(f"Note: only {len(rows)} eligible pair(s) at {lambda_1=}")
         groups.append(rows.nsmallest(top, "ratio").sort_values("lambda_2"))
     return pd.concat(groups, ignore_index=True)
 
@@ -136,21 +224,28 @@ def table_rows(
     Rows are grouped by Lambda_1, printed on the first row of each group.
     With metric "ci" a cell is width (coverage), with coverage in
     \\undercov{} when clearly below nominal; the document must define
-    \\undercov. With metric "band" a column with the true band width comes
-    before the methods, and a cell is the mean estimated band width.
+    \\undercov. With metric "excess" a column with the true band width
+    comes before the methods, and a cell is the excess width, CI width
+    minus that true band width, with coverage as for "ci". With metric
+    "band" the true band width column comes first too, and a cell is the
+    mean estimated band width.
     """
     lines = []
     for lambda_1, group in pairs.groupby("lambda_1", sort=False):
         for k, pair in enumerate(group.itertuples()):
             cells = cells_at(df, lambda_1, pair.lambda_2, methods)
             row = [f"{lambda_1:g}" if k == 0 else "", f"{pair.lambda_2:g}"]
-            if metric == "band":
-                row.append(f"{cells.true_band_width.iloc[0]:.3f}")
+            true_width = cells.true_band_width.iloc[0]
+            if metric in ("band", "excess"):
+                row.append(f"{true_width:.3f}")
             for method in methods:
                 result = cells[cells.method == method].iloc[0]
-                row.append(toy_sim_slide_figs.band_cell(result)
-                           if metric == "band"
-                           else toy_sim_slide_figs.table_cell(result, nominal))
+                if metric == "band":
+                    row.append(toy_sim_slide_figs.band_cell(result))
+                    continue
+                offset = true_width if metric == "excess" else 0.0
+                row.append(toy_sim_slide_figs.table_cell(
+                    result, nominal, true_width=offset))
             lines.append(" & ".join(row) + r" \\")
         lines.append(r"\addlinespace")
     return "\n".join(lines[:-1]) + "\n"
@@ -191,13 +286,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--top", type=int, default=3,
                         help="Lambda_2 values per Lambda_1: those with the "
                              "smallest split/intersection width ratio.")
-    parser.add_argument("--metric", choices=("ci", "band"), default="ci",
-                        help="Table cells: 'ci' for width (coverage), 'band' "
-                             "for the mean estimated band width.")
+    parser.add_argument("--metric", choices=tuple(TABLE_PREFIXES),
+                        default="ci",
+                        help="Table cells: 'ci' for width (coverage), "
+                             "'excess' for the excess width over the true "
+                             "band (coverage), 'band' for the mean estimated "
+                             "band width.")
+    parser.add_argument("--row-rule", choices=ROW_RULES, default="calibrated",
+                        help="How the Lambda_2 rows are chosen: 'calibrated' "
+                             "(convex split narrowest relative to the "
+                             "calibrated intersection) or 'convex-wins' "
+                             "(convex split beats the split intersection and "
+                             "convex CLR beats the CLR intersection, most "
+                             "clearly) [default %(default)s].")
     parser.add_argument("--methods", nargs="+", choices=tuple(METHOD_NAMES),
                         default=DEFAULT_METHODS,
-                        help="Method columns, in this order; crossfit, clr "
-                             "and convexclr need a R/causal_sim_quick.R run.")
+                        help="Method columns, in this order; crossfit needs "
+                             "a R/causal_sim_quick.R run.")
     parser.add_argument("--macro-decimals", type=int, default=3,
                         help="Decimal places of the MC s.e. caption macros.")
     parser.add_argument("--macro-prefix", default=DEFAULT_MACRO_PREFIX,
@@ -229,9 +334,10 @@ def main() -> None:
     methods = [METHOD_NAMES[name] for name in args.methods]
     summary = pd.read_csv(args.summary)
     df = summary[summary.outcome == args.outcome]
-    pairs = best_pairs(df, args.lambdas_1, args.top, nominal)
+    choose = best_pairs if args.row_rule == "calibrated" else convex_win_pairs
+    pairs = choose(df, args.lambdas_1, args.top, nominal)
     out_dir = args.summary.parent if args.out_dir is None else args.out_dir
-    prefix = "band_width" if args.metric == "band" else "width_coverage"
+    prefix = TABLE_PREFIXES[args.metric]
     table_path = out_dir / f"{prefix}_best_{args.outcome}.tex"
     header = (f"% Written by python -m src.latex.causal_sim_tables from "
               f"{args.summary.name}\n")

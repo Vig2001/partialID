@@ -6,8 +6,9 @@ Usage, from the repo root:
     python -m src.latex.toy_sim_slide_figs [--ratio 1] [--table-gaps 0 0.05 0.1]
         [--table-ratios 1 2 5]
         [--with-calibrated | --by-dataset | --fused | --clr
-         | --split-intersection]
-        [--with-oracle] [--with-mcse] [--metric ci|band|ends]
+         | --split-intersection | --comparator-sets]
+        [--with-oracle] [--with-mcse]
+        [--metric ci|excess|band|ends|end_errors]
 Outputs, in src/outputs/toy_sim/:
     joint_coverage_r<ratio>_slides.png  coverage heatmaps, naive intersection vs split
     width_coverage_small_gaps.tex       table rows for the width slide, or
@@ -20,9 +21,17 @@ Outputs, in src/outputs/toy_sim/:
         M3, M7, M8, M9 (fused CIs only), with --with-oracle M2 last, or
     width_coverage_clr_r<ratios>.tex  columns M3, M7, M8 (CLR), or
     width_coverage_split_intersection_r<ratios>.tex  columns M10 (split
-        intersection), M11 (split band intersection) and M3 (convex split);
+        intersection), M11 (split band intersection) and M3 (convex split),
+        or
+    width_coverage_comparators_r<ratios>.tex  the paper's comparator sets
+        (since 2026-11-13): sample splitting M10, M3, M7; simultaneous
+        inference M14, M8, M9; with selection M12, M13; with --with-oracle M2
+        last (name ends _oracle);
     each name gets an _mcse suffix with --with-mcse (MC s.e. of each width
-    on a second line in the cell). With --metric band the cells are mean
+    on a second line in the cell). With --metric excess the cells are the
+    mean excess width, CI width minus the true band width (the same for
+    every method), with coverage, and the name starts excess_coverage_. With
+    --metric band the cells are mean
     estimated band widths U_hat - L_hat and the name starts band_width_
     instead of width_coverage_. With --metric ends each method has two
     cells, the mean estimated ends L_hat and U_hat, and the name starts
@@ -33,7 +42,8 @@ Outputs, in src/outputs/toy_sim/:
     \\inward{} marking, and the name starts band_end_errors_.
     <table>_macros.tex                 median, min and max MC s.e. in the
         table, as LaTeX macros for the caption: \\toyWidthMcse{Median,Min,Max}
-        and \\toyCovMcse{...} (ci), \\toyBandMcse{...} (band), or
+        and \\toyCovMcse{...} (ci and excess: the excess width has the CI
+        width's MC s.e.), \\toyBandMcse{...} (band), or
         \\toyLowerEndMcse{...} and \\toyUpperEndMcse{...} (ends); with --clr
         the names start \\toyClr instead of \\toy, and with
         --split-intersection \\toySplitInt, so the sets can be input in one
@@ -72,11 +82,21 @@ TABLE_METHODS_CLR = (toy_sim.M3, toy_sim.M7, toy_sim.M8)
 # {0, 1}, selected by CI limit (M10) or by estimated bound (M11), and not
 # restricted (M3).
 TABLE_METHODS_SPLIT_INTERSECTION = (toy_sim.M10, toy_sim.M11, toy_sim.M3)
+# Paper tables since 2026-11-13: the comparator sets, sample splitting (split
+# intersection, convex split, convex cross-fit), simultaneous inference
+# (intersection of calibrated CIs, CLR intersection, convex CLR; the first two
+# are equal, shown side by side), and the CLR methods with adaptive
+# inequality selection; --with-oracle adds the oracle convex CI last.
+TABLE_METHODS_COMPARATORS = (toy_sim.M10, toy_sim.M3, toy_sim.M7, toy_sim.M14,
+                             toy_sim.M8, toy_sim.M9, toy_sim.M12, toy_sim.M13)
+TABLE_METHODS_COMPARATORS_ORACLE = TABLE_METHODS_COMPARATORS + (toy_sim.M2,)
 # Caption macros: name -> results.csv column of MC s.e.; each name gives
 # macros <prefix><name>Median, <prefix><name>Min and <prefix><name>Max over
-# the table's cells.
+# the table's cells. The excess width is the CI width less a constant, so it
+# has the CI width's MC s.e.
 CAPTION_MACROS = {
     "ci": {"WidthMcse": "width_mcse", "CovMcse": "cov_joint_mcse"},
+    "excess": {"WidthMcse": "width_mcse", "CovMcse": "cov_joint_mcse"},
     "band": {"BandMcse": "band_width_mcse"},
     "ends": {"LowerEndMcse": "bias_L_mcse", "UpperEndMcse": "bias_U_mcse"},
     "end_errors": {"LowerEndMcse": "bias_L_mcse",
@@ -84,7 +104,8 @@ CAPTION_MACROS = {
 }
 # Output name prefix for each table metric.
 TABLE_PREFIXES = {
-    "ci": "width_coverage", "band": "band_width", "ends": "band_ends",
+    "ci": "width_coverage", "excess": "excess_coverage", "band": "band_width",
+    "ends": "band_ends",
     "end_errors": "band_end_errors",
 }
 MACRO_PREFIX = "toy"
@@ -116,17 +137,25 @@ def plot_joint_coverage(
     )
 
 
-def table_cell(row: pd.Series, nominal: float, with_mcse: bool = False) -> str:
+def table_cell(
+    row: pd.Series,
+    nominal: float,
+    with_mcse: bool = False,
+    true_width: float = 0.0,
+) -> str:
     """'width (coverage)', with coverage in \\undercov{} if clearly low.
 
-    With with_mcse, the cell has a second line in small type giving the Monte
-    Carlo standard error of the width, '$\\pm$ mcse'. The two lines sit in a
-    nested tabular so each column stays as wide as without the error.
+    With true_width > 0 the first number is the excess width, the mean CI
+    width minus true_width (the cell's true band width), which keeps the
+    width's Monte Carlo standard error. With with_mcse, the cell has a
+    second line in small type giving that standard error, '$\\pm$ mcse'. The
+    two lines sit in a nested tabular so each column stays as wide as
+    without the error.
     """
     cov = f"{row.cov_joint:.3f}"
     if row.cov_joint < nominal - UNDERCOVER_SES * row.cov_joint_mcse:
         cov = rf"\undercov{{{cov}}}"
-    cell = f"{row.width:.3f} ({cov})"
+    cell = f"{row.width - true_width:.3f} ({cov})"
     if not with_mcse:
         return cell
     mcse = rf"{{\scriptsize $\pm$\,{row.width_mcse:.3f}}}"
@@ -223,13 +252,16 @@ def width_table_rows(
     printed on the first row of each group. With metric "ci" a cell is
     width (coverage); the slide must define \\undercov, \\splitcol and
     \\plugincol (one argument each), and with with_mcse each width is
-    followed by its Monte Carlo standard error. With metric "band" a cell
+    followed by its Monte Carlo standard error. Metric "excess" is the same
+    with the true band width cfg.true_hi - cfg.true_lo subtracted from every
+    width. With metric "band" a cell
     is the mean estimated band width; with metric "ends" each method has
     two cells, L_hat and U_hat (see ends_cells), and the paper must define
     \\inward; with metric "end_errors" the two cells are |L_hat - L| and
     |U_hat - U| (see end_error_cells).
     """
     nominal = 1 - cfg.alpha
+    true_width = cfg.true_hi - cfg.true_lo if metric == "excess" else 0.0
     lines = []
     for r in ratios:
         for k, g in enumerate(gaps):
@@ -249,7 +281,7 @@ def width_table_rows(
                     row.extend(end_error_cells(result))
                     continue
                 macro = TABLE_CELL_MACROS.get(method, "")
-                cell = table_cell(result, nominal, with_mcse)
+                cell = table_cell(result, nominal, with_mcse, true_width)
                 row.append(f"{macro}{{{cell}}}" if macro else cell)
             lines.append(" & ".join(row) + r" \\")
         lines.append(r"\addlinespace")
@@ -291,17 +323,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                               "split), written to "
                               "width_coverage_split_intersection_r<ratios>"
                               ".tex; caption macros start \\toySplitInt.")
+    columns.add_argument("--comparator-sets", action="store_true",
+                         help="Columns M10 (split intersection), M3, M7 "
+                              "(sample splitting), M14 (calibrated CIs "
+                              "intersected), M8 (CLR intersection), M9 "
+                              "(simultaneous inference), M12, M13 (CLR "
+                              "with selection), written to "
+                              "<prefix>_comparators_r<ratios>.tex.")
     parser.add_argument("--with-oracle", action="store_true",
-                        help="With --by-dataset or --fused only: add the "
-                             "oracle convex CI (M2) as the last column, "
-                             "written to a separate _oracle table.")
+                        help="With --by-dataset, --fused or "
+                             "--comparator-sets only: add the oracle convex "
+                             "CI (M2) as the last column, written to a "
+                             "separate _oracle table.")
     parser.add_argument("--with-mcse", action="store_true",
                         help="Add each mean width's Monte Carlo standard "
                              "error on a second line in its cell, written to "
                              "a separate _mcse table.")
     parser.add_argument("--metric", choices=tuple(TABLE_PREFIXES),
                         default="ci",
-                        help="Table cells: 'ci' for width (coverage), 'band' "
+                        help="Table cells: 'ci' for width (coverage), "
+                             "'excess' for the excess width, CI width minus "
+                             "the true band width (coverage), 'band' "
                              "for the mean estimated band width, 'ends' for "
                              "the mean estimated ends L_hat and U_hat (two "
                              "cells per method), 'end_errors' for their "
@@ -310,8 +352,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, default=None,
                         help="Output directory; defaults to the results' one.")
     args = parser.parse_args(argv)
-    if args.with_oracle and not (args.by_dataset or args.fused):
-        parser.error("--with-oracle requires --by-dataset or --fused")
+    if args.with_oracle and not (args.by_dataset or args.fused
+                                 or args.comparator_sets):
+        parser.error("--with-oracle requires --by-dataset, --fused or "
+                     "--comparator-sets")
     return args
 
 
@@ -346,12 +390,18 @@ def main() -> None:
     elif args.split_intersection:
         methods = TABLE_METHODS_SPLIT_INTERSECTION
         table_name = f"split_intersection_r{ratios}"
+    elif args.comparator_sets and args.with_oracle:
+        methods = TABLE_METHODS_COMPARATORS_ORACLE
+        table_name = f"comparators_r{ratios}_oracle"
+    elif args.comparator_sets:
+        methods = TABLE_METHODS_COMPARATORS
+        table_name = f"comparators_r{ratios}"
     elif args.with_calibrated:
         methods = TABLE_METHODS_CALIBRATED
         table_name = "small_gaps_calibrated"
     else:
         methods, table_name = TABLE_METHODS, "small_gaps"
-    if args.with_mcse and args.metric == "ci":
+    if args.with_mcse and args.metric in ("ci", "excess"):
         table_name += "_mcse"
     table_path = out_dir / f"{TABLE_PREFIXES[args.metric]}_{table_name}.tex"
     header = "% Written by python -m src.latex.toy_sim_slide_figs from results.csv\n"

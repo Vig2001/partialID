@@ -45,25 +45,30 @@ from src.plotting import causal_sim_plots
 from src.plotting import toy_sim_plots
 
 # Method names in summary_full.csv (R/causal_sim_quick.R) -> figure labels,
-# top to bottom.
+# top to bottom: the single studies and the calibrated intersection (hidden
+# in the paper), then the paper's comparator sets (since 2026-11-13),
+# sample splitting followed by simultaneous inference.
 DATASET_1 = "dataset 1"
 DATASET_2 = "dataset 2"
 METHOD_LABELS = {
     DATASET_1: "large OS",
     DATASET_2: "small OS",
     "intersection (calibrated)": "intersection, calibrated",
-    "intersection (CLR)": "intersection, CLR",
+    "intersection (split)": "intersection CIs, split",
     "convex (split)": "convex, split",
     "convex (cross-fit)": "convex, cross-fit",
+    "intersection (CLR)": "CLR",
     "convex (CLR)": "convex, CLR",
 }
-# Colour of each method, fixed so that it is the same in every panel: the
-# six validated slots of toy_sim_plots.PALETTE, in order, for the methods
-# the paper shows; the small OS (hidden there) is neutral grey.
+# Colour of each method, fixed so that it is the same in every panel. The
+# methods the paper shows have their own validated slots of
+# toy_sim_plots.PALETTE (the split intersection took the calibrated
+# intersection's on 2026-11-13); the methods hidden there are neutral grey.
 METHOD_COLOURS = {
     DATASET_1: toy_sim_plots.PALETTE[0],
     DATASET_2: toy_sim_plots.GREY_LINE,
-    "intersection (calibrated)": toy_sim_plots.PALETTE[1],
+    "intersection (calibrated)": toy_sim_plots.GREY_LINE,
+    "intersection (split)": toy_sim_plots.PALETTE[1],
     "intersection (CLR)": toy_sim_plots.PALETTE[2],
     "convex (split)": toy_sim_plots.PALETTE[3],
     "convex (cross-fit)": toy_sim_plots.PALETTE[4],
@@ -75,12 +80,14 @@ DEFAULT_MACRO_PREFIX = "causal"
 METHOD_MACROS = {
     DATASET_1: "LargeOS", DATASET_2: "SmallOS",
     "intersection (calibrated)": "Calibrated",
+    "intersection (split)": "SplitInt",
     "intersection (CLR)": "Clr", "convex (split)": "Split",
     "convex (cross-fit)": "CrossFit", "convex (CLR)": "ConvexClr",
 }
 # CLI name -> method name, for --hide.
 CLI_NAMES = {"dataset1": DATASET_1, "dataset2": DATASET_2,
              "intersection": "intersection (calibrated)",
+             "splitint": "intersection (split)",
              "clr": "intersection (CLR)", "split": "convex (split)",
              "crossfit": "convex (cross-fit)", "convexclr": "convex (CLR)"}
 CELL_COLUMNS = ("lambda_1", "lambda_2")
