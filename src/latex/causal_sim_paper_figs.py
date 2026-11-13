@@ -22,6 +22,9 @@ Outputs, beside the summary (or in --out-dir):
     width_ratio_stats_<outcome><suffix>.csv  per method: selected cells,
         valid cells, and the median, 90th percentile and maximum ratio over
         the valid ones
+    width_ratio_cells_<outcome><suffix>.csv  per selected cell and method:
+        the ratio (empty where the method is not valid), with the reference
+        and panel title, for src.latex.causal_sim_box_panels
     width_ratio_<outcome><suffix>_macros.tex  caption macros: the number of
         selected cells, \\<prefix><Outcome>RatioCells, and each method's
         percentage of them where it is valid, e.g.
@@ -220,6 +223,25 @@ def ratio_stats(ratios: pd.DataFrame, methods: Sequence[str]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def cell_ratios(
+    ratios: pd.DataFrame, reference: str, title: str
+) -> pd.DataFrame:
+    """Per-cell ratios with the reference and panel title, for saving.
+
+    Args:
+        ratios: Output of mc_metrics.width_relative_to_best or
+            mc_metrics.width_relative_to_truth.
+        reference: The --reference used, a key of REFERENCE_LABELS.
+        title: The panel title.
+
+    Returns:
+        The cell columns, method and ratio, with reference and panel_title
+        columns.
+    """
+    return ratios[[*CELL_COLUMNS, "method", "ratio"]].assign(
+        reference=reference, panel_title=title)
+
+
 def panel_title(
     outcome: str,
     cells: pd.DataFrame,
@@ -335,13 +357,16 @@ def main() -> None:
     fig_path = out_dir / f"width_ratio_box_{stem}.pdf"
     hidden = {CLI_NAMES[name] for name in args.hide}
     shown = [m for m in methods if m not in hidden]
+    title = panel_title(args.outcome, df, titled)
     causal_sim_plots.plot_width_ratio_boxes(
         ratios, shown, [METHOD_LABELS[m] for m in shown], METHOD_COLOURS,
-        panel_title(args.outcome, df, titled), fig_path, log_x=args.log_x,
+        title, fig_path, log_x=args.log_x,
         xlabel=REFERENCE_LABELS[args.reference])
     ratio_table = ratio_stats(ratios, methods)
     stats_path = out_dir / f"width_ratio_stats_{stem}.csv"
     ratio_table.to_csv(stats_path, index=False)
+    cells_path = out_dir / f"width_ratio_cells_{stem}.csv"
+    cell_ratios(ratios, args.reference, title).to_csv(cells_path, index=False)
     macros_path = out_dir / f"width_ratio_{stem}_macros.tex"
     macros_path.write_text(
         "% Written by python -m src.latex.causal_sim_paper_figs from "
@@ -356,7 +381,7 @@ def main() -> None:
         print(f"Hidden method {method!r} is the narrowest valid CI in {best} "
               f"cells" + ("" if best == 0 else "; the caption must say so"))
     print(f"Written to {fig_path}\nWritten to {stats_path}\n"
-          f"Written to {macros_path}")
+          f"Written to {cells_path}\nWritten to {macros_path}")
 
 
 if __name__ == "__main__":
