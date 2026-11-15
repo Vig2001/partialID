@@ -435,7 +435,7 @@ def plot_bound_convergence(
             if g > 0 and g not in looser_drawn:
                 ax.plot(sub.n1, sub.L_2, color=colour, lw=1, ls=":",
                         label=(None if looser_drawn
-                               else "looser single-dataset bounds"))
+                               else "looser single-study bounds"))
                 ax.plot(sub.n1, sub.U_1, color=colour, lw=1, ls=":")
                 looser_drawn.add(g)
         first = df.iloc[0]

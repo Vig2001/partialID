@@ -13,6 +13,8 @@ Rows: for each Lambda_1 in --lambdas-1, the --top values of Lambda_2 chosen by
         convex CLR CI narrower than the CLR intersection CI, those where the
         larger of the two excess-width ratios (convex over counterpart) is
         smallest; fewer than --top where fewer pairs qualify.
+--rows (since 2026-11-14) fixes the Lambda_2 values of the Lambda_1 it names,
+e.g. --rows 1.5:1.05,1.1,1.15, in place of --row-rule there.
 Columns: the methods in --methods (default: each dataset alone, the calibrated
 intersection and the convex split).
 
@@ -20,6 +22,7 @@ Usage, from the repo root:
     python -m src.latex.causal_sim_tables [--summary <summary_full.csv>]
         [--outcome continuous] [--lambdas-1 3 3.5 4 4.5 5] [--top 3]
         [--metric ci|excess|band] [--row-rule calibrated|convex-wins]
+        [--rows LAMBDA_1:LAMBDA_2,LAMBDA_2,... ...]
         [--methods dataset1 dataset2 intersection
         splitint split crossfit calint clr convexclr clrsel convexclrsel]
         (default: dataset1 dataset2 intersection split)
@@ -196,6 +199,69 @@ def smallest_per_lambda_1(
     return pd.concat(groups, ignore_index=True)
 
 
+def fixed_pairs(
+    df: pd.DataFrame, lambda_1: float, lambdas_2: Sequence[float],
+    methods: Sequence[str]
+) -> pd.DataFrame:
+    """The pairs (lambda_1, each of lambdas_2), with no score (ratio NaN).
+
+    Raises:
+        ValueError: If a pair is not on the grid or lacks one of the methods.
+    """
+    for lambda_2 in lambdas_2:
+        found = set(cells_at(df, lambda_1, lambda_2, methods).method)
+        missing = [method for method in methods if method not in found]
+        if missing:
+            raise ValueError(
+                f"No summary rows for {missing} at {lambda_1=}, {lambda_2=}"
+            )
+    return pd.DataFrame({"lambda_1": lambda_1, "lambda_2": sorted(lambdas_2),
+                         "ratio": np.nan})
+
+
+def select_pairs(
+    df: pd.DataFrame,
+    lambdas_1: Sequence[float],
+    top: int,
+    nominal: float,
+    row_rule: str,
+    rows: Sequence[tuple[float, Sequence[float]]],
+    methods: Sequence[str],
+) -> pd.DataFrame:
+    """The tabulated pairs: fixed by rows where given, else by row_rule.
+
+    Args:
+        df: summary_full.csv rows for one outcome.
+        lambdas_1: Values of Lambda_1, in the order of the row groups.
+        top: Largest number of Lambda_2 values per Lambda_1 under row_rule.
+        nominal: Nominal joint coverage, 1 - alpha.
+        row_rule: One of ROW_RULES.
+        rows: (Lambda_1, Lambda_2 values) from --rows; each Lambda_1 is in
+            lambdas_1.
+        methods: Tabulated methods; each fixed pair must have all of them.
+
+    Returns:
+        Columns lambda_1, lambda_2 and ratio (the row rule's score; NaN for
+        fixed pairs), grouped by lambda_1 in the order of lambdas_1.
+    """
+    def fixed_for(lambda_1: float) -> Sequence[float] | None:
+        return next((lambdas_2 for fixed, lambdas_2 in rows
+                     if np.isclose(fixed, lambda_1, atol=LAMBDA_TOL)), None)
+
+    by_rule = [lambda_1 for lambda_1 in lambdas_1 if fixed_for(lambda_1) is None]
+    choose = best_pairs if row_rule == "calibrated" else convex_win_pairs
+    chosen = choose(df, by_rule, top, nominal) if by_rule else None
+    groups = []
+    for lambda_1 in lambdas_1:
+        lambdas_2 = fixed_for(lambda_1)
+        if lambdas_2 is None:
+            groups.append(chosen[np.isclose(chosen.lambda_1, lambda_1,
+                                            atol=LAMBDA_TOL)])
+        else:
+            groups.append(fixed_pairs(df, lambda_1, lambdas_2, methods))
+    return pd.concat(groups, ignore_index=True)
+
+
 def cells_at(
     df: pd.DataFrame, lambda_1: float, lambda_2: float,
     methods: Sequence[str]
@@ -274,6 +340,23 @@ def caption_macros(
     return "\n".join(lines) + "\n"
 
 
+def parse_rows(text: str) -> tuple[float, tuple[float, ...]]:
+    """One --rows entry, LAMBDA_1:LAMBDA_2,LAMBDA_2,..., as numbers.
+
+    Raises:
+        argparse.ArgumentTypeError: If text is not of that form.
+    """
+    lambda_1, colon, lambdas_2 = text.partition(":")
+    try:
+        if not colon:
+            raise ValueError
+        return float(lambda_1), tuple(float(v) for v in lambdas_2.split(","))
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected LAMBDA_1:LAMBDA_2[,LAMBDA_2...], got {text!r}"
+        ) from None
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--summary", type=Path, default=DEFAULT_SUMMARY,
@@ -299,6 +382,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                              "(convex split beats the split intersection and "
                              "convex CLR beats the CLR intersection, most "
                              "clearly) [default %(default)s].")
+    parser.add_argument("--rows", type=parse_rows, nargs="+", default=[],
+                        metavar="LAMBDA_1:LAMBDA_2,...",
+                        help="Fixed Lambda_2 rows of some Lambda_1 values, "
+                             "e.g. 1.5:1.05,1.1,1.15, in place of "
+                             "--row-rule there; each Lambda_1 must be in "
+                             "--lambdas-1.")
     parser.add_argument("--methods", nargs="+", choices=tuple(METHOD_NAMES),
                         default=DEFAULT_METHODS,
                         help="Method columns, in this order; crossfit needs "
@@ -319,6 +408,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         parser.error(f"--top must be >= 1, got {args.top}")
     if len(set(args.methods)) < len(args.methods):
         parser.error(f"--methods has a repeat: {args.methods}")
+    fixed = [lambda_1 for lambda_1, _ in args.rows]
+    if len(set(fixed)) < len(fixed):
+        parser.error(f"--rows repeats a Lambda_1: {fixed}")
+    unknown = [lambda_1 for lambda_1 in fixed
+               if not np.isclose(args.lambdas_1, lambda_1, atol=LAMBDA_TOL).any()]
+    if unknown:
+        parser.error(f"--rows Lambda_1 {unknown} not in --lambdas-1 "
+                     f"{args.lambdas_1}")
     if args.macro_decimals < 0:
         parser.error(f"--macro-decimals must be >= 0, got "
                      f"{args.macro_decimals}")
@@ -334,8 +431,8 @@ def main() -> None:
     methods = [METHOD_NAMES[name] for name in args.methods]
     summary = pd.read_csv(args.summary)
     df = summary[summary.outcome == args.outcome]
-    choose = best_pairs if args.row_rule == "calibrated" else convex_win_pairs
-    pairs = choose(df, args.lambdas_1, args.top, nominal)
+    pairs = select_pairs(df, args.lambdas_1, args.top, nominal,
+                         args.row_rule, args.rows, methods)
     out_dir = args.summary.parent if args.out_dir is None else args.out_dir
     prefix = TABLE_PREFIXES[args.metric]
     table_path = out_dir / f"{prefix}_best_{args.outcome}.tex"
