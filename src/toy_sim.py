@@ -766,16 +766,25 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="Monte Carlo replicates per cell.")
     parser.add_argument("--frac-a", type=float, default=defaults.frac_a,
                         help="Fold-A fraction for the sample-split method.")
+    parser.add_argument("--gaps", type=float, nargs="+",
+                        default=list(defaults.gaps),
+                        help="Values for g_L and g_U; must include 0 and 1. "
+                             "Every cell uses the same draws, so cells shared "
+                             "with another grid are unchanged.")
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT_DIR,
                         help="Directory for results.csv and figures.")
     parser.add_argument("--no-plots", action="store_true",
                         help="Skip the figures.")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if not {0.0, 1.0} <= set(args.gaps):
+        parser.error(f"--gaps must include 0 and 1, got {args.gaps}")
+    return args
 
 
 def main() -> None:
     args = parse_args()
-    cfg = ToyConfig(reps=args.reps, frac_a=args.frac_a)
+    cfg = ToyConfig(reps=args.reps, frac_a=args.frac_a,
+                    gaps=tuple(args.gaps))
     run(cfg, args.seed, args.out_dir, plots=not args.no_plots)
 
 

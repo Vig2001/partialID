@@ -26,7 +26,10 @@ Outputs, in src/outputs/toy_sim/:
     width_coverage_comparators_r<ratios>.tex  the paper's comparator sets
         (since 2026-11-13): sample splitting M10, M3, M7; simultaneous
         inference M14, M8, M9; with selection M12, M13; with --with-oracle M2
-        last (name ends _oracle);
+        last (name ends _oracle), or
+    width_coverage_paper_r<ratios>.tex  the paper table since 2026-11-15:
+        the comparator sets without M14, as a whole tabular with headers
+        (src/latex/paper_tabular.py);
     each name gets an _mcse suffix with --with-mcse (MC s.e. of each width
     on a second line in the cell). With --metric excess the cells are the
     mean excess width, CI width minus the true band width (the same for
@@ -57,6 +60,7 @@ from pathlib import Path
 import pandas as pd
 
 from src import toy_sim
+from src.latex import paper_tabular
 from src.plotting import toy_sim_plots
 
 DEFAULT_RESULTS = toy_sim.DEFAULT_OUT_DIR / "results.csv"
@@ -94,6 +98,17 @@ TABLE_METHODS_BAND_ORACLE = (toy_sim.M11, toy_sim.M3, toy_sim.M2)
 TABLE_METHODS_COMPARATORS = (toy_sim.M10, toy_sim.M3, toy_sim.M7, toy_sim.M14,
                              toy_sim.M8, toy_sim.M9, toy_sim.M12, toy_sim.M13)
 TABLE_METHODS_COMPARATORS_ORACLE = TABLE_METHODS_COMPARATORS + (toy_sim.M2,)
+# Paper table since 2026-11-15: the comparator sets without the intersection
+# of calibrated CIs (M14, equal to M8), written as a whole tabular.
+TABLE_METHODS_PAPER = (toy_sim.M10, toy_sim.M3, toy_sim.M7, toy_sim.M8,
+                       toy_sim.M9, toy_sim.M12, toy_sim.M13)
+# Name of each toy method in src/latex/paper_tabular.COLUMNS.
+PAPER_COLUMN_NAMES = {
+    toy_sim.M10: "intersection (split)", toy_sim.M3: "convex (split)",
+    toy_sim.M7: "convex (cross-fit)", toy_sim.M8: "intersection (CLR)",
+    toy_sim.M9: "convex (CLR)", toy_sim.M12: "intersection (CLR, selection)",
+    toy_sim.M13: "convex (CLR, selection)",
+}
 # Caption macros: name -> results.csv column of MC s.e.; each name gives
 # macros <prefix><name>Median, <prefix><name>Min and <prefix><name>Max over
 # the table's cells. The excess width is the CI width less a constant, so it
@@ -339,6 +354,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                               "(simultaneous inference), M12, M13 (CLR "
                               "with selection), written to "
                               "<prefix>_comparators_r<ratios>.tex.")
+    columns.add_argument("--paper-sets", action="store_true",
+                         help="Columns M10, M3, M7, M8, M9, M12, M13 (the "
+                              "comparator sets without M14) as a whole "
+                              "tabular with headers, written to "
+                              "<prefix>_paper_r<ratios>.tex.")
     parser.add_argument("--with-oracle", action="store_true",
                         help="With --by-dataset, --fused or "
                              "--comparator-sets only: add the oracle convex "
@@ -408,6 +428,8 @@ def main() -> None:
     elif args.comparator_sets:
         methods = TABLE_METHODS_COMPARATORS
         table_name = f"comparators_r{ratios}"
+    elif args.paper_sets:
+        methods, table_name = TABLE_METHODS_PAPER, f"paper_r{ratios}"
     elif args.with_calibrated:
         methods = TABLE_METHODS_CALIBRATED
         table_name = "small_gaps_calibrated"
@@ -417,10 +439,12 @@ def main() -> None:
         table_name += "_mcse"
     table_path = out_dir / f"{TABLE_PREFIXES[args.metric]}_{table_name}.tex"
     header = "% Written by python -m src.latex.toy_sim_slide_figs from results.csv\n"
-    table_path.write_text(
-        header + width_table_rows(df, args.table_gaps, args.table_ratios, cfg,
-                                  methods, args.with_mcse, args.metric)
-    )
+    rows = width_table_rows(df, args.table_gaps, args.table_ratios, cfg,
+                            methods, args.with_mcse, args.metric)
+    if args.paper_sets:
+        rows = paper_tabular.tabular(
+            ["$r$", "$g$"], [PAPER_COLUMN_NAMES[m] for m in methods], rows)
+    table_path.write_text(header + rows)
     macros_path = table_path.with_name(f"{table_path.stem}_macros.tex")
     cells = table_subset(df, args.table_gaps, args.table_ratios, methods)
     macros_path.write_text(

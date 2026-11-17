@@ -5,11 +5,15 @@ A cell is a pair (Lambda_1, Lambda_2). With --reference best (the default)
 the reference in each cell is the narrowest CI among the methods with valid
 joint coverage there (mc_metrics.width_relative_to_best); with --reference
 truth it is the cell's true band width (mc_metrics.width_relative_to_truth).
-A method's box shows its ratios over the selected cells where it is valid.
+With --reference excess-truth (since 2026-11-15) the box shows the excess
+width over the true band width, (CI width - true band width) / true band
+width, i.e. the truth ratio less 1, the tables' excess width on a per-cell
+scale. A method's box shows its ratios over the selected cells where it is
+valid.
 
 Usage, from the repo root:
     python -m src.latex.causal_sim_paper_figs --summary <summary_full.csv>
-        --outcome continuous|binary [--reference best|truth]
+        --outcome continuous|binary [--reference best|truth|excess-truth]
         [--lambda-1-range LO HI | --lambda-1-interval '(LO,HI]']
         [--lambda-2-range LO HI | --lambda-2-interval '(LO,HI]']
         [--max-gap-se G] [--hide dataset1 dataset2]
@@ -60,8 +64,11 @@ METHOD_LABELS = {
     "intersection (split)": "intersection CIs, split",
     "convex (split)": "convex, split",
     "convex (cross-fit)": "convex, cross-fit",
-    "intersection (CLR)": "CLR",
+    "intersection (CLR)": "CLR (Šidák)",
     "convex (CLR)": "convex, CLR",
+    # Since 2026-11-15: the CLR methods with adaptive inequality selection.
+    "intersection (CLR, selection)": "CLR (AIS)",
+    "convex (CLR, selection)": "convex, CLR (AIS)",
 }
 # Colour of each method, fixed so that it is the same in every panel. The
 # methods the paper shows have their own validated slots of
@@ -76,6 +83,8 @@ METHOD_COLOURS = {
     "convex (split)": toy_sim_plots.PALETTE[3],
     "convex (cross-fit)": toy_sim_plots.PALETTE[4],
     "convex (CLR)": toy_sim_plots.PALETTE[5],
+    "intersection (CLR, selection)": toy_sim_plots.PALETTE[6],
+    "convex (CLR, selection)": toy_sim_plots.PALETTE[7],
 }
 # Start of every caption-macro name, unless --macro-prefix is given.
 DEFAULT_MACRO_PREFIX = "causal"
@@ -86,13 +95,17 @@ METHOD_MACROS = {
     "intersection (split)": "SplitInt",
     "intersection (CLR)": "Clr", "convex (split)": "Split",
     "convex (cross-fit)": "CrossFit", "convex (CLR)": "ConvexClr",
+    "intersection (CLR, selection)": "ClrAis",
+    "convex (CLR, selection)": "ConvexClrAis",
 }
 # CLI name -> method name, for --hide.
 CLI_NAMES = {"dataset1": DATASET_1, "dataset2": DATASET_2,
              "intersection": "intersection (calibrated)",
              "splitint": "intersection (split)",
              "clr": "intersection (CLR)", "split": "convex (split)",
-             "crossfit": "convex (cross-fit)", "convexclr": "convex (CLR)"}
+             "crossfit": "convex (cross-fit)", "convexclr": "convex (CLR)",
+             "clrsel": "intersection (CLR, selection)",
+             "convexclrsel": "convex (CLR, selection)"}
 CELL_COLUMNS = ("lambda_1", "lambda_2")
 UNDERCOVER_SES = toy_sim_slide_figs.UNDERCOVER_SES
 LAMBDA_TOL = 1e-9  # Lambda values are read back from CSV
@@ -100,6 +113,7 @@ LAMBDA_TOL = 1e-9  # Lambda values are read back from CSV
 REFERENCE_LABELS = {
     "best": "CI width / narrowest valid CI width in the same cell",
     "truth": "CI width / true band width",
+    "excess-truth": "Excess width / true band width",
 }
 INTERVAL_PATTERN = re.compile(r"^([\[(])([^,]+),([^,]+)([\])])$")
 
@@ -291,8 +305,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--reference", choices=tuple(REFERENCE_LABELS),
                         default="best",
                         help="Denominator of each ratio: the narrowest valid "
-                             "CI in the cell, or the cell's true band width "
-                             "[default %(default)s].")
+                             "CI in the cell, or the cell's true band width; "
+                             "excess-truth divides the excess width by the "
+                             "true band width [default %(default)s].")
     for k in (1, 2):
         group = parser.add_mutually_exclusive_group()
         group.add_argument(f"--lambda-{k}-range", type=float, nargs=2,
@@ -348,10 +363,16 @@ def main() -> None:
     if df.empty:
         raise ValueError(f"No {args.outcome} cells in the selected ranges")
     relative = (mc_metrics.width_relative_to_truth
-                if args.reference == "truth"
+                if args.reference in ("truth", "excess-truth")
                 else mc_metrics.width_relative_to_best)
     ratios = relative(df, methods, CELL_COLUMNS, 1 - args.alpha,
                       UNDERCOVER_SES)
+    if args.reference == "excess-truth":
+        # (W - T) / T = W / T - 1.
+        ratios["ratio"] = ratios.ratio - 1
+        if args.log_x and (ratios.ratio <= 0).any():
+            raise ValueError("--log-x needs positive excess widths; the "
+                             f"smallest is {ratios.ratio.min():.3g}")
     out_dir = args.summary.parent if args.out_dir is None else args.out_dir
     stem = f"{args.outcome}{args.suffix}"
     fig_path = out_dir / f"width_ratio_box_{stem}.pdf"

@@ -3,7 +3,7 @@
 Results come as a DataFrame with one row per (g_L, g_U, r, method) cell.
 """
 
-from collections.abc import Collection, Sequence
+from collections.abc import Callable, Collection, Sequence
 from pathlib import Path
 from typing import NamedTuple
 
@@ -11,12 +11,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib import axes as mpl_axes
-from matplotlib import colors
+from matplotlib import colors, ticker
 
-# Categorical slots in fixed order (dataviz reference palette; the six
-# slots pass its colour-blindness checks on a light surface).
-PALETTE = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300")
-MARKERS = ("o", "s", "^", "D", "v", "P")
+# Categorical slots in fixed order (dataviz reference palette; the first
+# seven pass its colour-blindness checks in this order on a light surface;
+# violet and red added 2026-11-15 for the CLR methods with selection).
+PALETTE = ("#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300",
+           "#6250d6", "#e34948")
+MARKERS = ("o", "s", "^", "D", "v", "P", "X", "*")
+SURFACE = "#ffffff"  # face colour of hollow markers
 DIVERGING = colors.LinearSegmentedColormap.from_list(
     "div", ["#d03b3b", "#f0efec", "#2a78d6"]
 )
@@ -27,6 +30,13 @@ GREY_LINE = "#73726c"
 # overlapping lines stay visible.
 DODGE = 0.04
 PAPER_FONT_SIZE = 8
+LEGEND_REF_HEIGHT_IN = 2.6  # figure height legend_below's spacing was set for
+GAP_AXIS_LABEL = "$g_L = g_U$ (not to scale)"
+# Gap axis to scale (since 2026-11-16): symmetric log, linear below
+# SYMLOG_LINTHRESH so that g = 0 fits; LINSCALE sets the width of that
+# linear part in decades.
+SYMLOG_LINTHRESH = 0.05
+SYMLOG_LINSCALE = 0.5
 
 
 def method_styles(methods: Sequence[str]) -> dict[str, tuple[str, str]]:
@@ -153,12 +163,14 @@ def plot_coverage_by_gap(
     reps: int,
     out_path: Path,
     figsize: tuple[float, float] = (6.0, 2.6),
+    ncol: int = 3,
+    row_starts: Collection[int] = (),
 ) -> None:
     """Joint coverage against equal gaps g_L = g_U = g, one panel per ratio r.
 
     Gaps are equally spaced on the x-axis, not to scale, and each method is
     shifted slightly sideways (DODGE). The grey band is nominal +/- 2
-    binomial MC s.e. The legend sits below the panels in rows of three.
+    binomial MC s.e. The legend sits below the panels in rows of ncol.
 
     Args:
         df: Simulation results (results.csv of src/toy_sim.py).
@@ -171,39 +183,315 @@ def plot_coverage_by_gap(
         reps: Monte Carlo replicates per cell, for the grey band.
         out_path: Where to save the figure.
         figsize: Figure size in inches; include it at this size.
+        ncol: Legend entries per row.
+        row_starts: Indices in methods whose legend entry starts a new row.
     """
     styles = method_styles(methods)
-    pos = np.arange(len(gaps))
-    offsets = DODGE * (np.arange(len(methods)) - (len(methods) - 1) / 2)
     band = 2 * np.sqrt(nominal * (1 - nominal) / reps)
     with plt.rc_context({"font.size": PAPER_FONT_SIZE}):
         fig, axes = plt.subplots(1, len(ratios), figsize=figsize,
                                  sharey=True, squeeze=False)
         for ax, r in zip(axes[0], ratios):
-            ax.axhspan(nominal - band, nominal + band, color=GREY_BAND, lw=0)
-            ax.axhline(nominal, color=GREY_LINE, lw=0.8)
-            for method, offset in zip(methods, offsets):
-                colour, marker = styles[method]
-                ax.plot(pos + offset,
-                        equal_gap_series(df, method, r, "cov_joint", gaps),
-                        color=colour, marker=marker, ms=3.5, lw=1.2,
-                        ls="--" if method in dashed else "-",
-                        label=labels[method])
-            ax.set_xticks(pos, [f"{g:g}" for g in gaps])
-            ax.set_xlabel("$g_L = g_U$ (not to scale)")
+            _draw_coverage_gap_panel(ax, df, r, methods, styles, dashed,
+                                     gaps, nominal, band)
+            ax.set_xlabel(GAP_AXIS_LABEL)
             ax.set_title(f"$r = {r:g}$")
-            style_axes(ax)
         axes[0, 0].set_ylabel("Joint coverage")
-        handles, names = axes[0, 0].get_legend_handles_labels()
-        ncol = 3
-        # The legend fills column by column; reorder so it reads by row.
-        order = [i for col in range(ncol) for i in range(col, len(names), ncol)]
-        fig.legend([handles[i] for i in order], [names[i] for i in order],
-                   loc="lower center", ncol=ncol, frameon=False,
-                   bbox_to_anchor=(0.5, 0))
-        fig.tight_layout(rect=(0, 0.17, 1, 1))
+        handles = [_gap_legend_handle(styles[m], m in dashed) for m in methods]
+        legend_below(fig, handles, [labels[m] for m in methods], ncol,
+                     row_starts)
         fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
+
+
+def legend_below(fig: plt.Figure, handles: Sequence, names: Sequence[str],
+                 ncol: int, row_starts: Collection[int] = ()) -> None:
+    """Legend below the panels, read by row, and room left for it.
+
+    Each entry whose index is in row_starts begins a new row; the row before
+    it is padded with blank entries.
+    """
+    handles, names = list(handles), list(names)
+    shift = 0  # blanks inserted so far
+    for start in sorted(row_starts):
+        at = start + shift
+        blanks = -at % ncol
+        handles[at:at] = [plt.Line2D([], [], alpha=0)] * blanks
+        names[at:at] = [""] * blanks
+        shift += blanks
+    # The legend fills column by column; reorder so it reads by row.
+    order = [i for col in range(ncol) for i in range(col, len(names), ncol)]
+    fig.legend([handles[i] for i in order], [names[i] for i in order],
+               loc="lower center", ncol=ncol, frameon=False,
+               bbox_to_anchor=(0.5, 0))
+    rows = -(-len(names) // ncol)
+    # Room for the legend, set for the 2.6 in paper figures and kept in
+    # inches (since 2026-11-16), so taller figures get no extra gap.
+    space_in = (0.05 + 0.06 * rows) * LEGEND_REF_HEIGHT_IN
+    fig.tight_layout(rect=(0, space_in / fig.get_figheight(), 1, 1))
+
+
+def plot_excess_width_by_gap(
+    df: pd.DataFrame,
+    methods: Sequence[str],
+    labels: dict[str, str],
+    dashed: Collection[str],
+    gaps: Sequence[float],
+    ratios: Sequence[float],
+    true_width: float,
+    nominal: float,
+    undercover_ses: float,
+    out_path: Path,
+    figsize: tuple[float, float] = (6.0, 2.6),
+    ncol: int = 3,
+    row_starts: Collection[int] = (),
+) -> None:
+    """Mean excess width against equal gaps g_L = g_U = g, one panel per r.
+
+    As plot_coverage_by_gap, with the mean CI width less the true band width
+    on the y-axis, which each panel scales on its own. A marker is hollow
+    where joint coverage is more than undercover_ses MC s.e. below nominal.
+
+    Args:
+        df: Simulation results (results.csv of src/toy_sim.py).
+        methods: Methods to plot; styled and listed in this order.
+        labels: Legend label per method.
+        dashed: Methods drawn with dashed lines; the others are solid.
+        gaps: Equal gaps g, in plotting order.
+        ratios: Ratios r, one panel each.
+        true_width: Width of the true band, U - L.
+        nominal: Nominal joint coverage, 1 - alpha.
+        undercover_ses: MC s.e. below nominal that count as undercoverage.
+        out_path: Where to save the figure.
+        figsize: Figure size in inches; include it at this size.
+        ncol: Legend entries per row.
+        row_starts: Indices in methods whose legend entry starts a new row.
+    """
+    styles = method_styles(methods)
+    # Panels scale their own y-axes, so their tick labels take room; smaller
+    # gap labels keep 0.05 and 0.1 apart.
+    with plt.rc_context({"font.size": PAPER_FONT_SIZE,
+                         "xtick.labelsize": PAPER_FONT_SIZE - 1}):
+        fig, axes = plt.subplots(1, len(ratios), figsize=figsize,
+                                 squeeze=False)
+        for ax, r in zip(axes[0], ratios):
+            _draw_excess_gap_panel(ax, df, r, methods, styles, dashed, gaps,
+                                   true_width, nominal, undercover_ses)
+            ax.set_xlabel(GAP_AXIS_LABEL)
+            ax.set_title(f"$r = {r:g}$")
+        axes[0, 0].set_ylabel("Excess width")
+        handles = [_gap_legend_handle(styles[m], m in dashed) for m in methods]
+        legend_below(fig, handles, [labels[m] for m in methods], ncol,
+                     row_starts)
+        fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_coverage_and_excess_by_gap(
+    df: pd.DataFrame,
+    methods: Sequence[str],
+    labels: dict[str, str],
+    dashed: Collection[str],
+    gaps: Sequence[float],
+    ratios: Sequence[float],
+    true_width: float,
+    nominal: float,
+    reps: int,
+    undercover_ses: float,
+    out_path: Path,
+    figsize: tuple[float, float] = (6.0, 4.4),
+    ncol: int = 3,
+    row_starts: Collection[int] = (),
+    style_order: Sequence[str] | None = None,
+    gap_scale: str = "categorical",
+    xlabel: str = GAP_AXIS_LABEL,
+) -> None:
+    """Joint coverage (top row) and mean excess width (bottom row) by gap.
+
+    plot_coverage_by_gap and plot_excess_width_by_gap in one figure (since
+    2026-11-16), with one panel column per ratio r and one legend. The
+    coverage panels share their y-axis; each excess-width panel scales its
+    own. The gap axis is labelled on the bottom row only.
+
+    Args:
+        df: Simulation results (results.csv of src/toy_sim.py).
+        methods: Methods to plot; styled and listed in this order.
+        labels: Legend label per method.
+        dashed: Methods drawn with dashed lines; the others are solid.
+        gaps: Equal gaps g, in plotting order.
+        ratios: Ratios r, one panel column each.
+        true_width: Width of the true band, U - L.
+        nominal: Nominal joint coverage, 1 - alpha.
+        reps: Monte Carlo replicates per cell, for the grey band.
+        undercover_ses: MC s.e. below nominal that count as undercoverage.
+        out_path: Where to save the figure.
+        figsize: Figure size in inches; include it at this size.
+        ncol: Legend entries per row.
+        row_starts: Indices in methods whose legend entry starts a new row.
+        style_order: Methods whose order sets each method's colour and
+            marker (method_styles), so that a subset keeps the full figure's
+            styles; defaults to methods.
+        gap_scale: "categorical" (gaps evenly spaced, not to scale),
+            "symlog" or "log+<c>" (to scale; see set_gap_axis).
+        xlabel: Gap-axis label.
+    """
+    styles = method_styles(methods if style_order is None else style_order)
+    band = 2 * np.sqrt(nominal * (1 - nominal) / reps)
+    with plt.rc_context({"font.size": PAPER_FONT_SIZE,
+                         "xtick.labelsize": PAPER_FONT_SIZE - 1}):
+        fig, axes = plt.subplots(2, len(ratios), figsize=figsize,
+                                 squeeze=False)
+        for j, r in enumerate(ratios):
+            top, bottom = axes[0, j], axes[1, j]
+            _draw_coverage_gap_panel(top, df, r, methods, styles, dashed,
+                                     gaps, nominal, band, gap_scale)
+            _draw_excess_gap_panel(bottom, df, r, methods, styles, dashed,
+                                   gaps, true_width, nominal, undercover_ses,
+                                   gap_scale)
+            top.set_title(f"$r = {r:g}$")
+            bottom.set_xlabel(xlabel)
+            if j > 0:  # coverage panels share the first panel's y-axis
+                top.sharey(axes[0, 0])
+                top.tick_params(labelleft=False)
+        axes[0, 0].set_ylabel("Joint coverage")
+        axes[1, 0].set_ylabel("Excess width")
+        handles = [_gap_legend_handle(styles[m], m in dashed) for m in methods]
+        legend_below(fig, handles, [labels[m] for m in methods], ncol,
+                     row_starts)
+        fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+
+
+def gap_label(gap: float) -> str:
+    """Tick label of a gap, without a leading zero (0.5 -> ".5")."""
+    label = f"{gap:g}"
+    return label[1:] if label.startswith("0.") else label
+
+
+def set_gap_axis(
+    ax: mpl_axes.Axes, gaps: Sequence[float], scale: str
+) -> Callable[[float], np.ndarray]:
+    """Sets the gap ticks (and scale) of ax; returns positions per dodge.
+
+    With scale "categorical" the gaps are evenly spaced (not to scale) and
+    a dodge offset is in units of that spacing. With "log+<c>", e.g.
+    "log+0.1", the axis is log(c + g) on a linear scale (to scale, g = 0
+    fits), and a dodge offset is in units of the average spacing. With "symlog" they are to
+    scale on a symmetric log axis, linear below SYMLOG_LINTHRESH so that
+    g = 0 fits, and a dodge offset is in units of the average spacing
+    between gaps on that axis. Mutates ax.
+
+    Returns:
+        A function from a dodge offset to the gaps' x positions.
+
+    Raises:
+        NotImplementedError: For any other scale.
+    """
+    labels = [gap_label(g) for g in gaps]
+    if scale.startswith("log+"):
+        # log(c + g) (since 2026-11-16): to scale on a log axis shifted by c,
+        # so that g = 0 fits; smaller c spreads out the small gaps.
+        shift = float(scale.removeprefix("log+"))
+        if shift <= 0:
+            raise ValueError(f"log shift must be positive, got {shift=}")
+        positions = np.log(shift + np.asarray(gaps, dtype=float))
+        ax.set_xticks(positions, labels)
+        unit = (positions.max() - positions.min()) / (len(positions) - 1)
+        return lambda offset: positions + offset * unit
+    if scale == "categorical":
+        positions = np.arange(len(gaps))
+        ax.set_xticks(positions, labels)
+        return lambda offset: positions + offset
+    if scale != "symlog":
+        raise NotImplementedError(f"unknown gap axis {scale=}")
+    values = np.asarray(gaps, dtype=float)
+    ax.set_xscale("symlog", linthresh=SYMLOG_LINTHRESH,
+                  linscale=SYMLOG_LINSCALE)
+    ax.set_xticks(values, labels)
+    ax.xaxis.set_minor_locator(ticker.NullLocator())
+    transform = ax.xaxis.get_transform()
+    scaled = transform.transform(values.reshape(-1, 1)).ravel()
+    unit = (scaled.max() - scaled.min()) / (len(values) - 1)
+    inverse = transform.inverted()
+    return lambda offset: inverse.transform(
+        (scaled + offset * unit).reshape(-1, 1)).ravel()
+
+
+def _dodge_offsets(n_methods: int) -> np.ndarray:
+    """Sideways shift of each method on a categorical gap axis (DODGE)."""
+    return DODGE * (np.arange(n_methods) - (n_methods - 1) / 2)
+
+
+def _draw_coverage_gap_panel(
+    ax: mpl_axes.Axes,
+    df: pd.DataFrame,
+    r: float,
+    methods: Sequence[str],
+    styles: dict[str, tuple[str, str]],
+    dashed: Collection[str],
+    gaps: Sequence[float],
+    nominal: float,
+    band: float,
+    gap_scale: str = "categorical",
+) -> None:
+    """Joint coverage at equal gaps for one ratio r (mutates ax).
+
+    Draws the grey band, nominal +/- band, each method's line and the gap
+    ticks; titles and axis labels are left to the caller.
+    """
+    gap_x = set_gap_axis(ax, gaps, gap_scale)
+    ax.axhspan(nominal - band, nominal + band, color=GREY_BAND, lw=0)
+    ax.axhline(nominal, color=GREY_LINE, lw=0.8)
+    for method, offset in zip(methods, _dodge_offsets(len(methods))):
+        colour, marker = styles[method]
+        ax.plot(gap_x(offset),
+                equal_gap_series(df, method, r, "cov_joint", gaps),
+                color=colour, marker=marker, ms=3.5, lw=1.2,
+                ls="--" if method in dashed else "-")
+    style_axes(ax)
+
+
+def _draw_excess_gap_panel(
+    ax: mpl_axes.Axes,
+    df: pd.DataFrame,
+    r: float,
+    methods: Sequence[str],
+    styles: dict[str, tuple[str, str]],
+    dashed: Collection[str],
+    gaps: Sequence[float],
+    true_width: float,
+    nominal: float,
+    undercover_ses: float,
+    gap_scale: str = "categorical",
+) -> None:
+    """Mean excess width at equal gaps for one ratio r (mutates ax).
+
+    Markers are hollow where joint coverage is more than undercover_ses MC
+    s.e. below nominal; titles and axis labels are left to the caller.
+    """
+    gap_x = set_gap_axis(ax, gaps, gap_scale)
+    for method, offset in zip(methods, _dodge_offsets(len(methods))):
+        colour, marker = styles[method]
+        x = gap_x(offset)
+        excess = equal_gap_series(df, method, r, "width", gaps) - true_width
+        cov = equal_gap_series(df, method, r, "cov_joint", gaps)
+        mcse = equal_gap_series(df, method, r, "cov_joint_mcse", gaps)
+        under = cov < nominal - undercover_ses * mcse
+        ax.plot(x, excess, color=colour, lw=1.2,
+                ls="--" if method in dashed else "-")
+        ax.plot(x[~under], excess[~under], ls="none", color=colour,
+                marker=marker, ms=3.5)
+        ax.plot(x[under], excess[under], ls="none", marker=marker,
+                ms=3.5, mfc=SURFACE, mec=colour)
+    ax.yaxis.set_major_locator(ticker.MaxNLocator(4, steps=[1, 2, 5, 10]))
+    style_axes(ax)
+
+
+def _gap_legend_handle(style: tuple[str, str], dashed: bool) -> plt.Line2D:
+    """Legend entry: the method's line with its marker."""
+    colour, marker = style
+    return plt.Line2D([], [], color=colour, marker=marker, ms=3.5, lw=1.2,
+                      ls="--" if dashed else "-")
 
 
 def heatmap_grid(

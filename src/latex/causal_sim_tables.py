@@ -15,6 +15,8 @@ Rows: for each Lambda_1 in --lambdas-1, the --top values of Lambda_2 chosen by
         smallest; fewer than --top where fewer pairs qualify.
 --rows (since 2026-11-14) fixes the Lambda_2 values of the Lambda_1 it names,
 e.g. --rows 1.5:1.05,1.1,1.15, in place of --row-rule there.
+--tabular (since 2026-11-15) writes the whole tabular with its headers
+(src/latex/paper_tabular.py) instead of the rows only.
 Columns: the methods in --methods (default: each dataset alone, the calibrated
 intersection and the convex split).
 
@@ -52,7 +54,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.latex import toy_sim_slide_figs
+from src.latex import paper_tabular, toy_sim_slide_figs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SUMMARY = (REPO_ROOT / "src" / "outputs" / "causal_sim_noise"
@@ -392,6 +394,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         default=DEFAULT_METHODS,
                         help="Method columns, in this order; crossfit needs "
                              "a R/causal_sim_quick.R run.")
+    parser.add_argument("--tabular", action="store_true",
+                        help="Write the whole tabular, with the comparator-"
+                             "set and column headers of "
+                             "src/latex/paper_tabular.py, not only the rows.")
     parser.add_argument("--macro-decimals", type=int, default=3,
                         help="Decimal places of the MC s.e. caption macros.")
     parser.add_argument("--macro-prefix", default=DEFAULT_MACRO_PREFIX,
@@ -438,9 +444,13 @@ def main() -> None:
     table_path = out_dir / f"{prefix}_best_{args.outcome}.tex"
     header = (f"% Written by python -m src.latex.causal_sim_tables from "
               f"{args.summary.name}\n")
-    table_path.write_text(
-        header + table_rows(df, pairs, nominal, args.metric, methods)
-    )
+    rows = table_rows(df, pairs, nominal, args.metric, methods)
+    if args.tabular:
+        lead = [r"$\Lambda_1$", r"$\Lambda_2$"]
+        if args.metric in ("band", "excess"):
+            lead.append(r"\shortstack{true band\\ width}")
+        rows = paper_tabular.tabular(lead, methods, rows)
+    table_path.write_text(header + rows)
     macros_path = table_path.with_name(f"{table_path.stem}_macros.tex")
     macros_path.write_text(
         header + caption_macros(pair_rows(df, pairs, methods), args.metric,

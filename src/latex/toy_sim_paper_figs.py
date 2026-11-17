@@ -8,11 +8,26 @@ Usage, from the repo root:
         [--ratios 1 3 5] [--out-dir <dir>]
 Outputs, in src/outputs/toy_sim/ (or --out-dir):
     coverage_by_gap_r<ratios>.pdf  joint coverage of the true band against
-        equal gaps g_L = g_U, one panel per ratio r (e.g. _r1-3-5), for the
-        paper's comparator sets (since 2026-11-13): intersection CIs dashed
-        (M10 split intersection, M8 CLR), convex CIs solid (M3 split, M7
-        cross-fit, M9 CLR); grey band: nominal +/- 2 binomial MC s.e. Sized
-        for the 6.0 in PMLR text width.
+        equal gaps g_L = g_U (every gap in the results), one panel per ratio
+        r (e.g. _r1-3-5), for the paper's comparator sets (since 2026-11-15
+        with the CLR methods with selection): intersection CIs dashed (M10
+        split intersection, M8 CLR, M12 CLR with selection), convex CIs
+        solid (M3 split, M7 cross-fit, M9 CLR, M13 convex CLR with
+        selection); grey band: nominal +/- 2 binomial MC s.e. Sized for the
+        6.0 in PMLR text width.
+    excess_width_by_gap_r<ratios>.pdf  (since 2026-11-15) the same for the
+        mean excess width, CI width minus the true band width; hollow
+        markers where joint coverage is more than UNDERCOVER_SES MC s.e.
+        below nominal.
+    coverage_excess_by_gap_r<ratios>.pdf  (since 2026-11-16) the two
+        figures above in one: coverage on the top row, excess width on the
+        bottom row, one legend; without the CLR CIs with selection (M12,
+        M13) since the second change of 2026-11-16; gap axis labelled g,
+        6.0 x 4.6 in, and --gap-scale symlog for a to-scale axis since the
+        third.
+    coverage_excess_by_gap_ais_r<ratios>.pdf  the same for CLR (M8), CLR
+        with selection (M12), convex CLR (M9) and convex CLR with selection
+        (M13), in the colours of the figures above.
     joint_coverage_naive_r<ratios>.pdf  joint coverage (%) of the true band
         over (g_L, g_U) for the naive intersection CI (M1), one heatmap per
         ratio r in a row; one colour scale for all panels, centred at the
@@ -30,21 +45,41 @@ from src import toy_sim
 from src.plotting import toy_sim_plots
 
 DEFAULT_RESULTS = toy_sim.DEFAULT_OUT_DIR / "results.csv"
-# The paper's comparator sets (since 2026-11-13): sample splitting, then
-# simultaneous inference. The naive and calibrated intersections and each
-# dataset alone are left out.
+# The paper's comparator sets: sample splitting, simultaneous inference and
+# (since 2026-11-15) the CLR methods with adaptive inequality selection. The
+# naive and calibrated intersections and each dataset alone are left out.
 COVERAGE_METHODS = (
     toy_sim.M10, toy_sim.M3, toy_sim.M7, toy_sim.M8, toy_sim.M9,
+    toy_sim.M12, toy_sim.M13,
 )
-INTERSECTION_METHODS = frozenset({toy_sim.M10, toy_sim.M8})
-# Legend labels, as in the paper's table headers.
+INTERSECTION_METHODS = frozenset({toy_sim.M10, toy_sim.M8, toy_sim.M12})
+# Legend labels, as in the paper's table headers; AIS is adaptive inequality
+# selection.
 PAPER_LABELS = {
-    toy_sim.M10: "Intersection CIs, split",
-    toy_sim.M3: "Convex, split",
-    toy_sim.M7: "Convex, cross-fit",
-    toy_sim.M8: "CLR",
-    toy_sim.M9: "Convex, CLR",
+    # Names since 2026-11-16 (supervisor); Intersection (CLR) is the
+    # Sidak-corrected intersection of the two studies' CIs.
+    toy_sim.M10: "Intersection (split)",
+    toy_sim.M3: "Convex (split)",
+    toy_sim.M7: "Convex (cross-fit)",
+    toy_sim.M8: "Intersection (CLR)",
+    toy_sim.M9: "Convex (CLR)",
+    toy_sim.M12: "Intersection (CLR, AIS)",
+    toy_sim.M13: "Convex (CLR, AIS)",
 }
+# Legend: the sample-splitting CIs on one row, the CLR CIs on the next.
+LEGEND_NCOL = 4
+LEGEND_ROW_STARTS = (COVERAGE_METHODS.index(toy_sim.M8),)
+# Merged figures (since 2026-11-16, second round): the main text's leaves out
+# the CLR CIs with selection, which get a figure of their own with the
+# simultaneous CLR CIs.
+MAIN_METHODS = tuple(m for m in COVERAGE_METHODS
+                     if m not in (toy_sim.M12, toy_sim.M13))
+MAIN_ROW_STARTS = (MAIN_METHODS.index(toy_sim.M8),)
+AIS_METHODS = (toy_sim.M8, toy_sim.M12, toy_sim.M9, toy_sim.M13)
+# Merged figures: gap axis labelled g (the gaps are equal, g_L = g_U = g)
+# and drawn taller (since 2026-11-16, third change).
+MERGED_XLABEL = "$g$"
+MERGED_FIGSIZE = (6.0, 4.6)
 HEATMAP_FIGSIZE = (6.0, 2.4)
 HEATMAP_FONT_SIZE = 6.0
 
@@ -106,13 +141,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
                         help="Values of r = SE_2 / SE_1, one panel each.")
     parser.add_argument("--out-dir", type=Path, default=None,
                         help="Output directory; defaults to the results' one.")
+    parser.add_argument("--gap-scale", default="categorical",
+                        help="Gap axis of the merged figures: categorical "
+                             "(evenly spaced), symlog, or log+<c> for "
+                             "log(c + g), e.g. log+0.05.")
     return parser.parse_args(argv)
 
 
 def main() -> None:
     args = parse_args()
     df = pd.read_csv(args.results)
-    cfg = toy_sim.ToyConfig()
+    # The gaps of the results, e.g. with g = 2 from `src.toy_sim --gaps`.
+    cfg = toy_sim.ToyConfig(gaps=tuple(sorted(df.g_L.unique())))
     missing = sorted(set(args.ratios) - set(df.r))
     if missing:
         raise ValueError(f"No cells with r in {missing}; have "
@@ -123,11 +163,34 @@ def main() -> None:
     fig_path = out_dir / f"coverage_by_gap_r{ratios}.pdf"
     toy_sim_plots.plot_coverage_by_gap(
         df, COVERAGE_METHODS, PAPER_LABELS, INTERSECTION_METHODS, cfg.gaps,
-        args.ratios, 1 - cfg.alpha, cfg.reps, fig_path,
+        args.ratios, 1 - cfg.alpha, cfg.reps, fig_path, ncol=LEGEND_NCOL,
+        row_starts=LEGEND_ROW_STARTS,
     )
     print(coverage_summary(df, args.ratios, cfg.gaps).round(4)
           .to_string(index=False))
     print(f"Written to {fig_path}")
+
+    excess_path = out_dir / f"excess_width_by_gap_r{ratios}.pdf"
+    toy_sim_plots.plot_excess_width_by_gap(
+        df, COVERAGE_METHODS, PAPER_LABELS, INTERSECTION_METHODS, cfg.gaps,
+        args.ratios, cfg.true_hi - cfg.true_lo, 1 - cfg.alpha,
+        toy_sim.UNDERCOVER_SES, excess_path, ncol=LEGEND_NCOL,
+        row_starts=LEGEND_ROW_STARTS,
+    )
+    print(f"Written to {excess_path}")
+
+    for tag, methods, row_starts in (("", MAIN_METHODS, MAIN_ROW_STARTS),
+                                     ("_ais", AIS_METHODS, ())):
+        merged_path = out_dir / f"coverage_excess_by_gap{tag}_r{ratios}.pdf"
+        toy_sim_plots.plot_coverage_and_excess_by_gap(
+            df, methods, PAPER_LABELS, INTERSECTION_METHODS, cfg.gaps,
+            args.ratios, cfg.true_hi - cfg.true_lo, 1 - cfg.alpha, cfg.reps,
+            toy_sim.UNDERCOVER_SES, merged_path, figsize=MERGED_FIGSIZE,
+            ncol=LEGEND_NCOL, row_starts=row_starts,
+            style_order=COVERAGE_METHODS, gap_scale=args.gap_scale,
+            xlabel=MERGED_XLABEL,
+        )
+        print(f"Written to {merged_path}")
 
     heatmap_path = out_dir / f"joint_coverage_naive_r{ratios}.pdf"
     plot_naive_coverage_heatmaps(df, args.ratios, cfg, heatmap_path)

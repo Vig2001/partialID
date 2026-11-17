@@ -48,7 +48,7 @@ settings.json blocks reading `private_data/` (for future data-use agreements); o
 - Convex combination method: stress-testing it and proving theorems. Brieuc's shorter proof of Prop 4.2 (`prop42_proof.pdf`) is under review; notes in `quality_reports/reviews/2026-11-02_prop42-proof-notes.md` (open: keep Remark 2 or not).
 - Abstract draft (2026-11-06, `Introduction/abstract.tex`): two independent datasets with different ID assumptions; the estimated intersection is biased inwards, so naive inference undercovers and the calibrated version is conservative. Contributions:
     1. convex fusion that converges to the intersection of population bands and is asymptotically valid under sample splitting;
-    2. the problem as a special case of CLR (2013), extended to pool variance across estimators (convex CLR);
+    2. the problem as a special case of CLR (2013), extended to pool variance across estimators (convex CLR). Overlap (2026-11-16): convex CLR without selection is P&S (2025) Section 5.2 (LCB_mix, Prop. 5) with two independent studies. New here: the version with selection, the fusion setting. Rewording pending;
     3. toy and causal simulations;
     4. K-fold cross-fitting as an extension of the split.
 
@@ -130,7 +130,7 @@ The code labels methods M1–M14. Use the names in chat and in the paper.
     - `--summarise-only` resummarises without refitting; in the sandbox add `--workers 1 --backend sequential`.
     - `summary.csv` is short; `summary_full.csv` has everything.
     - The R ports match the Python methods (M7–M9 to 2e-13, M12–M14 to 1e-14).
-- **Paper designs:** n = (3000, 500), Λ step 0.05, 1000 reps.
+- **Paper designs:** main text since 2026-11-16 is the non-scaled design (n = 2000/500, same DGP in both studies, SE ratio about 2 at the tie Λ₂ = Λ₁). The scaled designs below are now in the appendix: n = (3000, 500), Λ step 0.05, 1000 reps.
     - Continuous: c = 2.5, Λ₁ in [3, 5], Λ₂ in [1, 3].
     - Binary: study 1's rare outcome k = 15 (prevalence 0.0616), Λ₁ in [1, 4], Λ₂ in [1, 2].
 - **Runs** (in `src/outputs/`):
@@ -182,7 +182,7 @@ Plan: `quality_reports/plans/2026-11-13_comparator-sets.md`. Stage 1 is done. St
 ### Where things are in the paper
 - **Toy, main text:**
     - `tab:toy-width-coverage` (three sets, excess width).
-    - `fig:toy-coverage-by-gap` (`fig_coverage_by_gap_mt.pdf`, from `src.latex.toy_sim_paper_figs`).
+    - `fig:toy-coverage-by-gap`: coverage (top) and excess width (bottom) in one figure, without the AIS CIs (`Figures/toy_sim/merged_plot/`, from `src.latex.toy_sim_paper_figs`); the AIS comparison is in `app:toy-ais`.
 - **Toy, appendix (`app:sim`):**
     - Oracle paragraph (`app:toy-oracle`).
     - `tab:toy-split-intersection`: split band intersection, convex split, oracle convex (`toy_sim_slide_figs --band-oracle`).
@@ -191,11 +191,13 @@ Plan: `quality_reports/plans/2026-11-13_comparator-sets.md`. Stage 1 is done. St
     - Convergence figure `fig_convergence_app.pdf`.
 - **Causal, main text:**
     - `tab:causal-continuous-param` and `tab:causal-binary-param` (eleven columns, scaled with `\resizebox`).
-    - `fig:causal-width-ratio`: one figure with continuous and binary panels side by side (`fig_width_mt.pdf`, from `src.latex.causal_sim_box_panels`, which reads the `width_ratio_cells_*.csv` files written by `causal_sim_paper_figs`).
-- **Causal, appendix (`app:sim-forest`):** binary forest figure and table, continuous forest table.
+    - `fig:causal-excess-by-lambda`: non-scaled design since 2026-11-16 (n = 2000/500, c = 1, k = 1, Λ₁ ∈ {2,…,5}, Λ₂ ∈ [1, 6] step 0.25; runs `causal_sim_quick_{continuous,binary}_unscaled`). Excess width (log y) at Λ₁ = 4, continuous left, binary right, no AIS CIs (`Figures/causal_sim/line_plots/non_scaled/`). The scaled design (c = 2.5, k = 15, n = 3000/500) and its two tables are in `app:causal-scaled`.
+- **Causal, appendix:**
+    - `app:causal-coverage` ("Causal Simulation: Further Results"): coverage at Λ₁ = 4, the three-Λ₁ panel figures (excess and coverage), and the AIS comparison at Λ₁ = 4. `app:toy-ais`: toy AIS comparison.
+    - `app:sim-forest`: the forest excess-width and coverage line plots (the continuous row has no cross-fit), the binary forest table and the continuous forest table.
 - **Files:**
     - Tables: `Tables/{toy_sim,causal_sim}/{total_width,excess_width}/`, with the same names in both; the paper inputs `excess_width`.
-    - Box plots: `Figures/causal_sim/total_width/`.
+    - Causal line plots: `Figures/causal_sim/line_plots/`. The old box plots, no longer input, are in `Figures/causal_sim/boxplots/{total_width,excess_width}/`.
     - Commands and history: `Figures/{toy_sim,causal_sim}/PROVENANCE.md`.
     - PDFs are gitignored in the paper repo, so upload them to Overleaf by hand.
     - Slide versions of the toy figures and tables come from `python -m src.latex.toy_sim_slide_figs`.
@@ -206,7 +208,7 @@ Plan: `quality_reports/plans/2026-11-13_comparator-sets.md`. Stage 1 is done. St
     - MC summaries: `src/helpers/mc_metrics.py`.
     - Plots: `src/plotting/`.
     - Paper and slide outputs: `src/latex/`.
-- `tests/` has 49 tests, all passing. pytest 9.2.0 is installed but not yet in `requirements.txt`.
+- `tests/` has 64 tests, all passing. pytest 9.2.0 is installed but not yet in `requirements.txt`.
 
 ## Skills
 
@@ -230,6 +232,8 @@ Agents (in `.claude/agents/`): code-reviewer, proofreader, methods-reviewer, cit
 
 <!-- Claude adds entries here, e.g. "Use \citet not \cite for in-text citations" -->
 - Compare widths only between methods with valid coverage; never call a valid CI "wider" than one that undercovers.
+- Figure and table labels (supervisor, 2026-11-16): Intersection (split), Convex (split), Convex (cross-fit), Intersection (CLR) (= Šidák-corrected intersection, said in each caption), Convex (CLR), Intersection (CLR, AIS), Convex (CLR, AIS); toy appendix: Intersection (band, split), Convex (oracle). The simulation prose uses the same names (e.g. "the Convex (split) CI"); Methodology keeps generic terms.
+- Main-text simulation figures leave out the CLR CIs with adaptive inequality selection; they get their own comparison figures (supervisor, 2026-11-16).
 - Each new talk gets its own folder inside `Slides/`.
 - Respect each section's assumptions: in the known-variance Gaussian section, never suggest estimating $\sigma_k^2$.
 - Write derivations in the paper as connected prose between displays, never with bold "Step 1", "Result." headings.
@@ -237,7 +241,8 @@ Agents (in `.claude/agents/`): code-reviewer, proofreader, methods-reviewer, cit
 - Table captions above, figure captions below (`compiled.tex` sets `\captionsetup[table]{position=top}`). Keep captions lean: shared conventions (nominal level, replications, coverage and bold, folds, selection, row rule) go in the simulation's setup text; MC s.e. as one "at most" clause from the `...Max` macros.
 - Don't rank methods by how often each is narrowest per cell (that uses hindsight). Compare fixed rules by median and worst-case width relative to the per-cell best.
 - Cross-fitting with nuisances means standard cross-fitting: fit on the other folds, predict on the held-out fold. Don't port the toy's fold-alone fits.
-- Related work: the closest papers are Lanners et al. (2025), Chernozhukov, Lee & Rosen (2013) and Yu et al. (2026; JRSS-B vol. 88, published version of arXiv 2412.03731). Han & McCloskey (2024) targets a parameter selected from data, so it is not close. Keep econometric references minimal; the contrast is that they don't combine data sources for partial ID.
+- Related work: the closest papers are Lanners et al. (2025), Chernozhukov, Lee & Rosen (2013) and Yu et al. (2026; JRSS-B vol. 88, published version of arXiv 2412.03731). Also close: Ponomarev & Semenova (2025; arXiv 2410.07443), whose LCB_mix is a convex CLR and who make the margin-condition point (cited at `convex.tex:66`); and Ji, Lei & Spector (2026; arXiv 2310.08115), whose Theorem 3.1 is cited in the split-validity proof (`proofs.tex`). Han & McCloskey (2024) targets a parameter selected from data, so it is not close. Keep econometric references minimal; the contrast is that they don't combine data sources for partial ID.
 - Since 2026-11-11 (supervisor): no single-dataset comparators in any paper table or figure. Causal box plots show CI width / true band width on a log scale; the binary panel uses Λ₁ in [2, 4], Λ₂ in (1, 2], stated in the panel title. Plan `done/2026-11-11_drop-single-dataset-truth-ratio.md`.
 - Paper input files are named `fig_|tab_<content>_<mt|app>` (main text or appendix), with no hash. The hash, command and old name go in PROVENANCE.md. This replaces the hash-in-name rule of /update-paper-figs.
+- Analytical (closed-form or tube-formula) critical values are not a contribution. They are what CLR choose not to do, and they are available here only because the studies are independent and d = 1.
 - In the paper use the Methods notation, not code names: weights $\omega_L$, $\omega_U$; oracle $\omega^{\ast}$ (`\ast`; estimate $\hat\omega^{\ast}$); population bounds $L_k, U_k$.

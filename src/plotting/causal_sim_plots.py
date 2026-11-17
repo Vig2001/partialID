@@ -1,13 +1,17 @@
 """Figures for the causal simulation (R/causal_sim_quick.R outputs).
 
-Results come as the per-(cell, method) rows of
-mc_metrics.width_relative_to_best, read from summary_full.csv.
+Box plots take the per-(cell, method) rows of
+mc_metrics.width_relative_to_best, read from summary_full.csv. Line plots
+(since 2026-11-16) take summary_full.csv rows directly: one line per method
+against Lambda_2, one panel per Lambda_1, as the toy figures against the gap.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 from matplotlib import ticker
 from matplotlib import transforms
@@ -19,8 +23,28 @@ GRID = "#e5e4e0"
 BOX_ALPHA = 0.35  # fill opacity; edges and whiskers are opaque
 SAVE_PAD_IN = 0.05  # vertical padding kept around the content, inches
 # Candidate ticks on a logarithmic ratio axis; those inside the axis range
-# are labelled as plain numbers.
-LOG_RATIO_TICKS = (1, 1.1, 1.2, 1.3, 1.5, 2, 3, 4, 5, 6, 8, 10, 15, 20)
+# are labelled as plain numbers. Those below 1 (since 2026-11-15) are for
+# excess width over the true band width.
+LOG_RATIO_TICKS = (0.02, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5, 0.7, 1, 1.1, 1.2,
+                   1.3, 1.5, 2, 3, 4, 5, 6, 8, 10, 15, 20)
+# Candidate ticks on a logarithmic excess-width axis (coarser than
+# LOG_RATIO_TICKS, whose labels around 1 overlap on a short panel).
+LOG_Y_TICKS = (0.02, 0.03, 0.05, 0.07, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.7, 1,
+               1.5, 2, 3, 5)
+LAMBDA_TOL = 1e-9  # Lambda values are read back from CSV
+# Line plots: summary_full.csv columns each series needs, and marker size
+# (smaller than the toy's 3.5, as each line has 21-41 points, not 7).
+SERIES_COLUMNS = ("width", "true_band_width", "cov_joint", "cov_joint_mcse")
+LINE_MARKER_SIZE = 2.0
+LINE_WIDTH = 1.0
+
+
+class LambdaRow(NamedTuple):
+    """One design's row of panels in a figure against Lambda_2."""
+
+    summary: pd.DataFrame  # summary_full.csv rows of one outcome
+    lambdas_1: Sequence[float]  # one panel each, left to right
+    name: str  # row label, e.g. "Continuous"
 
 
 def set_log_ratio_axis(ax: plt.Axes) -> None:
@@ -264,3 +288,316 @@ def _style_ratio_axes(
     ax.set_axisbelow(True)
     for side in ("top", "right"):
         ax.spines[side].set_visible(False)
+
+
+def at_lambda_1(summary: pd.DataFrame, lambda_1: float) -> pd.Series:
+    """Whether each row has Lambda_1 = lambda_1, up to LAMBDA_TOL."""
+    return pd.Series(np.isclose(summary.lambda_1, lambda_1, rtol=0,
+                                atol=LAMBDA_TOL), index=summary.index)
+
+
+def lambda2_series(
+    summary: pd.DataFrame,
+    method: str,
+    lambda_1: float,
+    columns: Sequence[str] = SERIES_COLUMNS,
+) -> pd.DataFrame:
+    """One method's cells at one Lambda_1, sorted by Lambda_2.
+
+    Args:
+        summary: summary_full.csv rows of one outcome.
+        method: Method name as in summary_full.csv.
+        lambda_1: Study 1's sensitivity parameter.
+        columns: Columns to keep besides lambda_2.
+
+    Returns:
+        A new DataFrame with lambda_2 and columns, one row per cell.
+
+    Raises:
+        ValueError: If there is no such cell, or a Lambda_2 repeats (e.g.
+            two outcomes in summary).
+    """
+    at = (summary.method == method) & at_lambda_1(summary, lambda_1)
+    cells = summary.loc[at, ["lambda_2", *columns]].sort_values("lambda_2")
+    if cells.empty:
+        raise ValueError(f"No cells for {method=} at {lambda_1=}")
+    if cells.lambda_2.duplicated().any():
+        raise ValueError(f"Repeated Lambda_2 for {method=} at {lambda_1=}; "
+                         "pass one outcome's rows")
+    return cells.reset_index(drop=True)
+
+
+def tie_lambda2(summary: pd.DataFrame, lambda_1: float) -> float:
+    """The grid Lambda_2 nearest a tie at lambda_1: smallest g_L + g_U.
+
+    Raises:
+        ValueError: If there is no cell at lambda_1.
+    """
+    cells = summary.loc[at_lambda_1(summary, lambda_1),
+                        ["lambda_2", "gap_L", "gap_U"]]
+    if cells.empty:
+        raise ValueError(f"No cells at {lambda_1=}")
+    total_gap = cells.gap_L.abs() + cells.gap_U.abs()
+    return float(cells.lambda_2.loc[total_gap.idxmin()])
+
+
+def excess_width_values(
+    cells: pd.DataFrame, nominal: float, undercover_ses: float
+) -> tuple[pd.Series, pd.Series]:
+    """Mean excess width (CI width less true band width) and undercoverage.
+
+    Returns:
+        (excess width, whether joint coverage is more than undercover_ses MC
+        s.e. below nominal), per row of cells (from lambda2_series).
+    """
+    excess = cells.width - cells.true_band_width
+    under = cells.cov_joint < nominal - undercover_ses * cells.cov_joint_mcse
+    return excess, under
+
+
+def coverage_values(cells: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+    """Joint coverage, with no hollow markers (the grey band shows them)."""
+    return cells.cov_joint, pd.Series(False, index=cells.index)
+
+
+class LambdaPanel(NamedTuple):
+    """One panel of a figure against Lambda_2."""
+
+    summary: pd.DataFrame  # summary_full.csv rows of one outcome
+    lambda_1: float
+    title: str = ""  # empty for no title
+    ylabel: str = ""  # empty for no label
+
+
+class LineStyle(NamedTuple):
+    """Marker size and line width of the method lines."""
+
+    marker_size: float = LINE_MARKER_SIZE
+    line_width: float = LINE_WIDTH
+
+
+def row_panels(
+    rows: Sequence[LambdaRow], ylabel: str
+) -> list[list[LambdaPanel]]:
+    """Panel grid with one row per design and one panel per Lambda_1.
+
+    Each panel is titled with its Lambda_1; the first panel of a row has
+    the y-label "<row name>: <ylabel>".
+    """
+    grid = []
+    for row in rows:
+        panels = []
+        for j, lambda_1 in enumerate(row.lambdas_1):
+            panels.append(LambdaPanel(
+                row.summary, lambda_1, rf"$\Lambda_1 = {lambda_1:g}$",
+                f"{row.name}: {ylabel}" if j == 0 else ""))
+        grid.append(panels)
+    return grid
+
+
+def plot_excess_width_by_lambda2(
+    panels: Sequence[Sequence[LambdaPanel]],
+    methods: Sequence[str],
+    labels: Mapping[str, str],
+    dashed: Collection[str],
+    nominal: float,
+    undercover_ses: float,
+    out_path: Path,
+    figsize: tuple[float, float] = (6.0, 4.4),
+    ncol: int = 4,
+    row_starts: Collection[int] = (),
+    log_y: bool = False,
+    style_order: Sequence[str] | None = None,
+    line_style: LineStyle = LineStyle(),
+) -> None:
+    """Mean excess width against Lambda_2, one panel per (design, Lambda_1).
+
+    As toy_sim_plots.plot_excess_width_by_gap, with Lambda_2 to scale on the
+    x-axis; each panel scales its own y-axis, logarithmic if log_y (since
+    2026-11-16: it separates the lines right of the tie, where the excess
+    widths are small). A marker is hollow where joint coverage is more than
+    undercover_ses MC s.e. below nominal. Arguments as plot_lambda2_panels.
+    """
+    plot_lambda2_panels(
+        panels, methods, labels, dashed, out_path,
+        values=lambda cells: excess_width_values(cells, nominal,
+                                                 undercover_ses),
+        sharey=False, figsize=figsize, ncol=ncol, row_starts=row_starts,
+        log_y=log_y, style_order=style_order, line_style=line_style)
+
+
+def plot_coverage_by_lambda2(
+    panels: Sequence[Sequence[LambdaPanel]],
+    methods: Sequence[str],
+    labels: Mapping[str, str],
+    dashed: Collection[str],
+    nominal: float,
+    reps: int,
+    out_path: Path,
+    figsize: tuple[float, float] = (6.0, 4.4),
+    ncol: int = 4,
+    row_starts: Collection[int] = (),
+    style_order: Sequence[str] | None = None,
+    line_style: LineStyle = LineStyle(),
+) -> None:
+    """Joint coverage against Lambda_2, one panel per (design, Lambda_1).
+
+    As toy_sim_plots.plot_coverage_by_gap; panels in a row share the y-axis.
+    The grey band is nominal +/- 2 binomial MC s.e. with reps replicates.
+    Arguments as plot_lambda2_panels.
+    """
+    band = 2 * np.sqrt(nominal * (1 - nominal) / reps)
+    plot_lambda2_panels(
+        panels, methods, labels, dashed, out_path, values=coverage_values,
+        sharey=True, figsize=figsize, ncol=ncol, row_starts=row_starts,
+        reference=(nominal, band), style_order=style_order,
+        line_style=line_style)
+
+
+def plot_lambda2_panels(
+    panels: Sequence[Sequence[LambdaPanel]],
+    methods: Sequence[str],
+    labels: Mapping[str, str],
+    dashed: Collection[str],
+    out_path: Path,
+    values: Callable[[pd.DataFrame], tuple[pd.Series, pd.Series]],
+    sharey: bool,
+    figsize: tuple[float, float],
+    ncol: int,
+    row_starts: Collection[int] = (),
+    reference: tuple[float, float] | None = None,
+    log_y: bool = False,
+    style_order: Sequence[str] | None = None,
+    line_style: LineStyle = LineStyle(),
+) -> None:
+    """One line per method against Lambda_2, in a grid of panels.
+
+    A method missing from a panel's summary (e.g. the cross-fit in a run
+    without K-fold fits) has no line there but keeps its legend entry. A
+    dotted vertical line marks the tie (tie_lambda2).
+
+    Args:
+        panels: Rows of panels, top to bottom, each left to right.
+        methods: Methods to plot, listed in the legend in this order.
+        labels: Legend label per method.
+        dashed: Methods drawn with dashed lines; the others are solid.
+        out_path: Where to save the figure (format from the suffix).
+        values: Maps a method's cells (lambda2_series) to (y, hollow).
+        sharey: Whether the panels of a row share their y-axis.
+        figsize: Figure size in inches; include it at this size.
+        ncol: Legend entries per row.
+        row_starts: Indices in methods whose legend entry starts a new row.
+        reference: (level, half-width) of a grey reference band, or None.
+        log_y: Whether the y-axes are logarithmic (values must be positive).
+        style_order: Methods whose order sets each method's colour and
+            marker (toy_sim_plots.method_styles), so that a subset keeps the
+            full figure's styles; defaults to methods.
+        line_style: Marker size and line width.
+
+    Raises:
+        ValueError: If panels is empty, a method has no style, or a panel's
+            summary has no cell at its Lambda_1.
+    """
+    if not panels or not any(panels):
+        raise ValueError("need at least one panel")
+    styles = toy_sim_plots.method_styles(
+        methods if style_order is None else style_order)
+    unstyled = [m for m in methods if m not in styles]
+    if unstyled:
+        raise ValueError(f"no style for {unstyled}; add them to style_order")
+    ncols = max(len(row) for row in panels)
+    with plt.rc_context({"font.size": toy_sim_plots.PAPER_FONT_SIZE}):
+        fig, axes = plt.subplots(len(panels), ncols, figsize=figsize,
+                                 sharey="row" if sharey else False,
+                                 squeeze=False)
+        for row, row_axes in zip(panels, axes):
+            for ax, panel in zip(row_axes, row):
+                _draw_lambda_panel(ax, panel, methods, styles, dashed, values,
+                                   reference, log_y, line_style)
+        handles = [_legend_handle(styles[m], m in dashed, line_style)
+                   for m in methods]
+        toy_sim_plots.legend_below(fig, handles, [labels[m] for m in methods],
+                                   ncol, row_starts)
+        fig.savefig(out_path, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _draw_lambda_panel(
+    ax: plt.Axes,
+    panel: LambdaPanel,
+    methods: Sequence[str],
+    styles: Mapping[str, tuple[str, str]],
+    dashed: Collection[str],
+    values: Callable[[pd.DataFrame], tuple[pd.Series, pd.Series]],
+    reference: tuple[float, float] | None,
+    log_y: bool,
+    line_style: LineStyle,
+) -> None:
+    """Draws every method's line in one panel on ax (mutates ax)."""
+    if reference is not None:
+        level, half_width = reference
+        ax.axhspan(level - half_width, level + half_width,
+                   color=toy_sim_plots.GREY_BAND, lw=0)
+        ax.axhline(level, color=toy_sim_plots.GREY_LINE, lw=0.8)
+    ax.axvline(tie_lambda2(panel.summary, panel.lambda_1),
+               color=toy_sim_plots.GREY_LINE, lw=0.8, ls=":")
+    present = set(panel.summary.method)
+    for method in methods:
+        if method not in present:
+            continue
+        cells = lambda2_series(panel.summary, method, panel.lambda_1)
+        y, hollow = values(cells)
+        _draw_series(ax, cells.lambda_2.to_numpy(), y.to_numpy(),
+                     hollow.to_numpy(), styles[method], method in dashed,
+                     line_style)
+    ax.set_xlabel(r"$\Lambda_2$")
+    if panel.title:
+        ax.set_title(panel.title)
+    if panel.ylabel:
+        ax.set_ylabel(panel.ylabel)
+    if log_y:
+        set_log_y_axis(ax)
+    else:
+        ax.yaxis.set_major_locator(ticker.MaxNLocator(4, steps=[1, 2, 5, 10]))
+    toy_sim_plots.style_axes(ax)
+
+
+def set_log_y_axis(ax: plt.Axes) -> None:
+    """Logarithmic y-axis with plain-number ticks from LOG_Y_TICKS."""
+    ax.set_yscale("log")
+    low, high = ax.get_ylim()
+    ticks = [t for t in LOG_Y_TICKS if low <= t <= high]
+    ax.yaxis.set_major_locator(ticker.FixedLocator(ticks))
+    ax.yaxis.set_major_formatter(ticker.FuncFormatter(lambda v, _: f"{v:g}"))
+    ax.yaxis.set_minor_locator(ticker.NullLocator())
+
+
+def _draw_series(
+    ax: plt.Axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    hollow: np.ndarray,
+    style: tuple[str, str],
+    dashed: bool,
+    line_style: LineStyle,
+) -> None:
+    """One method's line, filled markers and hollow markers (mutates ax)."""
+    colour, marker = style
+    size = line_style.marker_size
+    ax.plot(x, y, color=colour, lw=line_style.line_width,
+            ls="--" if dashed else "-")
+    ax.plot(x[~hollow], y[~hollow], ls="none", color=colour, marker=marker,
+            ms=size)
+    ax.plot(x[hollow], y[hollow], ls="none", marker=marker, ms=size,
+            mfc=toy_sim_plots.SURFACE, mec=colour, mew=0.6)
+
+
+def _legend_handle(
+    style: tuple[str, str], dashed: bool, line_style: LineStyle
+) -> plt.Line2D:
+    """Legend entry: the method's line with its marker."""
+    colour, marker = style
+    return plt.Line2D([], [], color=colour, marker=marker,
+                      ms=max(line_style.marker_size,
+                             toy_sim_plots.PAPER_FONT_SIZE / 2),
+                      lw=line_style.line_width, ls="--" if dashed else "-")

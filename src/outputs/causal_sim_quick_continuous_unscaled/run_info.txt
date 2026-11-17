@@ -1,0 +1,16 @@
+date: 2026-11-16 16:20
+git: a00f049
+DGK commit: 26cbbf6e90dcd0648c837c0d58568375291dd522 (dvds.binary(), unmodified)
+nuisances: parametric, true functional forms (R/helpers/dvds_lean.R), out of fold with 5 folds | cross-fit: standard (fold f's nuisances from models fitted on the other folds)
+command: Rscript R/causal_sim_quick.R --reps 1000 --n1 2000 --n2 500 --outcomes continuous --lambdas-1 2:5:1 --lambdas-2 1:6:0.25 --workers 1 --backend sequential --out-dir src/outputs/causal_sim_quick_continuous_unscaled
+seed: 1 | reps: 1000 | n: 2000, 500 | frac_a: 0.3 | folds: 5 | alpha: 0.05
+outcomes: continuous
+lambdas study 1: 2, 3, 4, 5
+lambdas study 2: 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75, 4, 4.25, 4.5, 4.75, 5, 5.25, 5.5, 5.75, 6
+noise scale (continuous outcome): study 1 1, study 2 1
+binary denominator k: study 1 1, study 2 1
+backend: sequential | workers: 1
+fitting run time: 4 min 25 s
+summary run time: 0 min 42 s
+R version 4.6.1 (2026-06-24)
+future 1.80.0 | future.apply 1.21.0 | progressr 1.1.0 | optparse 1.8.2
