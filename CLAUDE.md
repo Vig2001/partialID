@@ -45,12 +45,12 @@ settings.json blocks reading `private_data/` (for future data-use agreements); o
 ## Current state
 
 ### Method and framing
-- Convex combination method: stress-testing it and proving theorems. Brieuc's shorter proof of Prop 4.2 (`prop42_proof.pdf`) is under review; notes in `quality_reports/reviews/2026-11-02_prop42-proof-notes.md` (open: keep Remark 2 or not).
-- Abstract draft (2026-11-06, `Introduction/abstract.tex`): two independent datasets with different ID assumptions; the estimated intersection is biased inwards, so naive inference undercovers and the calibrated version is conservative. Contributions:
-    1. convex fusion that converges to the intersection of population bands and is asymptotically valid under sample splitting;
-    2. the problem as a special case of CLR (2013), extended to pool variance across estimators (convex CLR). Overlap (2026-11-16): convex CLR without selection is P&S (2025) Section 5.2 (LCB_mix, Prop. 5) with two independent studies. New here: the version with selection, the fusion setting. Rewording pending;
-    3. toy and causal simulations;
-    4. K-fold cross-fitting as an extension of the split.
+- Convex combination method: stress-testing it and proving theorems. Brieuc's shorter proof of Prop 4.2 (`prop42_proof.pdf`) is under review. In the CLeaR paper that result is `prop:split-lower` (Prop. 1, proved in Appendix A.1), and the A.1 proof uses $F_k$ and Pólya's theorem, as his note does; notes in `quality_reports/reviews/2026-11-02_prop42-proof-notes.md` (open: keep Remark 2 or not).
+- Abstract (CLeaR submission, inline in `compiled.tex`; the 2026-11-06 draft is in `Tex_Outdated/pre_clear_paper/Introduction/abstract.tex`): two independent studies each give a band, and the effect lies in their intersection. CIs for the intersection combine the per-study CIs:
+    1. the Šidák-corrected intersection, shown to coincide with CLR (2013);
+    2. convex combinations of the two studies' bounds at each end, each a valid bound, with the oracle (narrowest) weight characterised;
+    3. estimated weights, valid by sample splitting (band consistent without the weight converging) or by CLR over convex combinations. Overlap (2026-11-16): convex CLR without selection is P&S (2025) Section 5.2 (LCB_mix, Prop. 5) with two independent studies. New here: the version with selection, and the fusion setting;
+    4. simulations: convex combinations are narrower when the bounds are close, and CLR-based CIs are narrower than split-based ones.
 
 ### Method codes
 The code labels methods M1–M14. Use the names in chat and in the paper.
@@ -73,6 +73,8 @@ The code labels methods M1–M14. Use the names in chat and in the paper.
 | M14 | intersection of calibrated CIs | equals M8 |
 
 ### Toy simulation
+The toy and causal findings below are pre-CLeaR. They come from runs now archived in `Outdated/outputs/`, except `toy_sim_g2` and the `_unscaled` causal runs, which the paper uses.
+
 `python -m src.toy_sim`, about 1 min 40 s. Known true band [1, 3]; r in {1, ..., 5}, gaps g in {0, 0.05, 0.1, 0.2, 0.5, 1}, 180 cells (findings below; run archived in `Outdated/outputs/toy_sim/`). The paper uses `src/outputs/toy_sim_g2/`, which adds g = 2.
 
 - **Cross-fit** (2026-11-03, plan `done/2026-11-03_toy-cross-fit.md`; K = 2 tried and dropped): M7 is narrower than M3 everywhere, but undercovers at exact ties (min joint coverage 0.925).
@@ -176,7 +178,7 @@ Plan: `quality_reports/plans/2026-11-13_comparator-sets.md`. Stage 1 is done. St
     - In the toy, selection matters only at gaps ≥ 0.5.
 - **Excess width:** tables report mean CI width minus the true band width. The causal tables add a true-band-width column.
 - **Causal table rows:** `causal_sim_tables --row-rule convex-wins`. For each Λ₁, they are the (up to) three Λ₂ where the convex split beats the split intersection and the convex CLR beats CLR, by the largest margin, with all four valid. The text states this rule.
-- **Removed:** the calibrated intersection is out of every table and figure (still computed and checked in code). The naive intersection is only in `fig_undercoverage_mt.pdf`.
+- **Removed:** the calibrated intersection is out of every table and figure (still computed and checked in code). The naive intersection is not in the paper (its figure `fig_undercoverage_mt.pdf` was deleted on 2026-11-22).
 - **Open:** whether to keep the causal Results opening remark about DGK's original design.
 
 ### Where things are in the paper
