@@ -101,7 +101,7 @@ Outputs, in each `--out-dir`:
 - `summary_full.csv` (gitignored): every summary column (MC s.e., per-end coverage, bias, weights).
 - `estimates.csv` (gitignored), `true_bands.csv` (per study), `single_study_coverage.csv` and `run_info.txt` (the exact command and git hash).
 
-The earlier designs (scaled noise, rare binary outcome, forest nuisances, DGK's design and its replication) are archived with their commands in `Outdated/`, `quality_reports/plans/done/` and `Outdated/provenance/` in the paper repo.
+The earlier designs (scaled noise, rare binary outcome, forest nuisances, DGK's design and its replication) are archived with their commands in `Outdated/`, `quality_reports/plans/done/` and `Tex_Outdated/provenance/` in the paper repo.
 
 ### Using Orca
 [Orca](https://www.onorca.dev/) runs several Claude Code sessions side by side, giving each "branch" its own git worktree: a separate checkout of the repo in its own folder, on its own branch.

@@ -180,7 +180,7 @@ Plan: `quality_reports/plans/2026-11-13_comparator-sets.md`. Stage 1 is done. St
 - **Open:** whether to keep the causal Results opening remark about DGK's original design.
 
 ### Where things are in the paper
-Since 2026-11-22 `compiled.tex` is the CLeaR 2027 source (class `clear2027`, `anon`). The previous local paper is in `Outdated/pre_clear_paper/`, which holds the scaled, forest and estimated-bands appendices and the toy tables.
+Since 2026-11-22 `compiled.tex` is the CLeaR 2027 source (class `clear2027`, `anon`). The previous local paper is in `Tex_Outdated/pre_clear_paper/`, which holds the scaled, forest and estimated-bands appendices and the toy tables.
 - **Sections:**
     - Introduction; Related literature.
     - Methodology: `notation_setup.tex`, `Intersection Bounds/CLR.tex`, `Convex/convex.tex`, `Intersection Bounds/CLR_Convex.tex`.
@@ -195,8 +195,8 @@ Since 2026-11-22 `compiled.tex` is the CLeaR 2027 source (class `clear2027`, `an
     - Fig. 5 `fig_coverage_excess_by_lambda_ais_app`.
 - **Tables:** none input. `Tables/toy_sim/tab_toy_width_mt` (the tabular form of Fig. 1) is kept.
 - **Files:**
-    - PDFs are gitignored in the paper repo, so upload them to Overleaf by hand.
-    - The full figure history up to the submission is in `Outdated/provenance/`.
+    - PDFs are gitignored in the paper repo except `Figures/**/*.pdf` (since 2026-11-22), so figures reach Overleaf through GitHub.
+    - The full figure history up to the submission is in `Tex_Outdated/provenance/`.
 
 ### Code
 - Code follows AGENTS.md.
