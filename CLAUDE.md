@@ -19,7 +19,7 @@ Point identification (ID) of a causal estimand relies on strong, untestable assu
     - `helpers/`: functions; `plotting/`: plotting functions; `latex/`: scripts that write paper and slide figures and tables
     - `outputs/`: only the runs and outputs the paper uses (`toy_sim_g2`, `causal_sim_quick_{continuous,binary}_unscaled`, `causal_sim_line_figs/non_scaled/merged_plots`)
 - `R/` (helpers in `R/helpers/`): the causal simulations; `tests/`: pytest tests; `checks/`: one-off numerical checks
-- `Outdated/` (since 2026-11-22, plan `2026-11-22_refactor-file-trees.md`): `scripts_misc/`, code the paper no longer uses (`src/`, `R/`), and the data of every other run (`outputs/`, figures and tables removed). Run folders named below without a path are there unless listed above. Not the source of truth: don't edit, import from or review it unless I ask
+- `Outdated/` (since 2026-11-22, plan `done/2026-11-22_refactor-file-trees.md`): `scripts_misc/`, code the paper no longer uses (`src/`, `R/`), and the data of every other run (`outputs/`, figures and tables removed). Run folders named below without a path are there unless listed above. Not the source of truth: don't edit, import from or review it unless I ask
 - `project1venv/`: virtual environment (never edit)
 - `partialID_Overleaf/`: the paper (`compiled.tex`)
 - `partialID_Overleaf/Slides/`: Beamer talks, one folder per talk (`Slides/YYYY-MM_<name>/YYYY-MM_<name>.tex`), using the shared UCL theme (`beamerthemeUCL.sty`) and `\input{../preamble.tex}` unless told otherwise
