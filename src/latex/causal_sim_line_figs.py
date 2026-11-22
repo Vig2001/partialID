@@ -6,7 +6,7 @@ colours, markers and line styles are those of the toy figures
 (src.latex.toy_sim_paper_figs); every method is shown whether or not it is
 valid. A dotted vertical line marks the grid Lambda_2 nearest the tie
 (smallest g_L + g_U). Added 2026-11-16, in place of the box plots of
-src.latex.causal_sim_paper_figs.
+Outdated/src/latex/causal_sim_paper_figs.py.
 
 Two layouts (since 2026-11-16, second round):
     grid   one row of panels per design (continuous on top, binary below),
@@ -15,6 +15,10 @@ Two layouts (since 2026-11-16, second round):
            continuous left, binary right, titled by outcome only, drawn
            larger (--single-figsize, --single-marker-size,
            --single-line-width).
+    merged-grid, merged-single (since 2026-11-17)  as grid and single, with
+           each design's joint coverage directly above its excess width in
+           one figure, as the toy merged figure (--merged-grid-figsize,
+           --merged-single-figsize).
 Method sets (--method-sets): main (sample splitting, CLR (Sidak) and convex
 CLR), ais (CLR (Sidak), CLR (AIS), convex CLR, convex CLR (AIS)) and all
 (the seven methods). Each method keeps the same colour and marker in every
@@ -38,6 +42,8 @@ method set S and layout:
         layout.
     coverage_by_lambda2_<S>[_lambda1-<L>]<suffix>.pdf  joint coverage of the
         true band; grey band: nominal +/- 2 binomial MC s.e.
+    coverage_excess_by_lambda2_<S>[_lambda1-<L>]<suffix>.pdf  the merged
+        layouts.
 """
 
 import argparse
@@ -144,6 +150,44 @@ def single_panels(
     return [panels]
 
 
+def merged_grid_panels(
+    rows: Sequence[causal_sim_plots.LambdaRow],
+) -> tuple[list[list[causal_sim_plots.LambdaPanel]],
+           list[list[causal_sim_plots.LambdaPanel]]]:
+    """Coverage and excess-width panel grids of the merged-grid layout.
+
+    One row per design and one panel per Lambda_1 in each grid; the
+    coverage panels carry the Lambda_1 titles, and the first panel of each
+    row the y-label "<design>\\n<quantity>".
+    """
+    coverage, excess = [], []
+    for row in rows:
+        coverage_row, excess_row = [], []
+        for j, lambda_1 in enumerate(row.lambdas_1):
+            first = j == 0
+            coverage_row.append(causal_sim_plots.LambdaPanel(
+                row.summary, lambda_1, rf"$\Lambda_1 = {lambda_1:g}$",
+                f"{row.name}\njoint coverage" if first else ""))
+            excess_row.append(causal_sim_plots.LambdaPanel(
+                row.summary, lambda_1, "",
+                f"{row.name}\nexcess width" if first else ""))
+        coverage.append(coverage_row)
+        excess.append(excess_row)
+    return coverage, excess
+
+
+def merged_single_panels(
+    rows: Sequence[causal_sim_plots.LambdaRow], lambda_1: float
+) -> tuple[list[list[causal_sim_plots.LambdaPanel]],
+           list[list[causal_sim_plots.LambdaPanel]]]:
+    """Coverage and excess-width panels of the merged-single layout: one
+    panel per design at lambda_1, titled by outcome above the coverage."""
+    coverage = single_panels(rows, lambda_1, "Joint coverage")
+    excess = [[panel._replace(title="")
+               for panel in single_panels(rows, lambda_1, "Excess width")[0]]]
+    return coverage, excess
+
+
 def legend_layout(methods: Sequence[str]) -> dict:
     """Legend columns and row starts: CLR methods on their own row."""
     if "convex (split)" not in methods:
@@ -187,9 +231,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--method-sets", nargs="+", choices=tuple(METHOD_SETS),
                         default=["main", "ais"],
                         help="Method sets, one figure each.")
-    parser.add_argument("--layouts", nargs="+", choices=("grid", "single"),
+    parser.add_argument("--layouts", nargs="+",
+                        choices=("grid", "single", "merged-grid",
+                                 "merged-single"),
                         default=["grid", "single"],
                         help="Figure layouts.")
+    parser.add_argument("--merged-grid-figsize", type=float, nargs=2,
+                        default=[6.0, 8.0], help="Merged grid size, in.")
+    parser.add_argument("--merged-single-figsize", type=float, nargs=2,
+                        default=[6.0, 5.2], help="Merged single size, in.")
     parser.add_argument("--lambda-1-single", type=float, default=4.0,
                         help="Lambda_1 of the single layout.")
     parser.add_argument("--single-figsize", type=float, nargs=2,
@@ -238,6 +288,26 @@ def write_figures(
     print(f"Written to {excess_path} and {coverage_path}")
 
 
+def write_merged_figure(
+    panels: tuple[list[list[causal_sim_plots.LambdaPanel]],
+                  list[list[causal_sim_plots.LambdaPanel]]],
+    methods: Sequence[str],
+    stem: str,
+    args: argparse.Namespace,
+    figsize: tuple[float, float],
+    line_style: causal_sim_plots.LineStyle,
+) -> None:
+    """Writes one merged figure: each design's coverage above its excess
+    width; panels is (coverage grid, excess-width grid)."""
+    coverage, excess = panels
+    out_path = args.out_dir / f"coverage_excess_by_lambda2_{stem}.pdf"
+    causal_sim_plots.plot_coverage_and_excess_by_lambda2(
+        coverage, excess, methods, LABELS, DASHED, 1 - args.alpha, args.reps,
+        toy_sim.UNDERCOVER_SES, out_path, figsize, log_y=args.log_y,
+        style_order=METHODS, line_style=line_style, **legend_layout(methods))
+    print(f"Written to {out_path}")
+
+
 def main() -> None:
     args = parse_args()
     step = args.lambda_2_step_continuous or None
@@ -267,6 +337,16 @@ def main() -> None:
                 methods,
                 f"{name}_lambda1-{args.lambda_1_single:g}{args.suffix}",
                 args, tuple(args.single_figsize), single_style)
+        if "merged-grid" in args.layouts:
+            write_merged_figure(
+                merged_grid_panels(rows), methods, f"{name}{args.suffix}",
+                args, tuple(args.merged_grid_figsize),
+                causal_sim_plots.LineStyle())
+        if "merged-single" in args.layouts:
+            write_merged_figure(
+                merged_single_panels(rows, args.lambda_1_single), methods,
+                f"{name}_lambda1-{args.lambda_1_single:g}{args.suffix}",
+                args, tuple(args.merged_single_figsize), single_style)
     print(coverage_summary(rows).round(4).to_string(index=False))
 
 

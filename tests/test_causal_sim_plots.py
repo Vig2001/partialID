@@ -89,3 +89,49 @@ def test_excess_width_values_flags_coverage_below_two_mcse_only():
     _, under = causal_sim_plots.excess_width_values(cells, 0.95, 2)
     assert under.tolist() == [True, False, False]
     pd.testing.assert_frame_equal(cells, before)
+
+
+def panel_grid(summary, rows):
+    """rows rows of two panels, at Lambda_1 = 3 and 4."""
+    return [[causal_sim_plots.LambdaPanel(summary, lambda_1)
+             for lambda_1 in (3.0, 4.0)] for _ in range(rows)]
+
+
+def test_coverage_and_excess_writes_a_figure(tmp_path):
+    summary = make_summary()
+    out_path = tmp_path / "merged.pdf"
+    causal_sim_plots.plot_coverage_and_excess_by_lambda2(
+        panel_grid(summary, 2), panel_grid(summary, 2),
+        ["convex (split)", "intersection (CLR)"],
+        {"convex (split)": "a", "intersection (CLR)": "b"},
+        {"intersection (CLR)"}, 0.95, 1000, 2, out_path, (6.0, 8.0),
+        log_y=True)
+    assert out_path.stat().st_size > 0
+
+
+def test_coverage_and_excess_rejects_unmatched_rows(tmp_path):
+    summary = make_summary()
+    with pytest.raises(ValueError, match="one excess-width row"):
+        causal_sim_plots.plot_coverage_and_excess_by_lambda2(
+            panel_grid(summary, 2), panel_grid(summary, 1),
+            ["convex (split)"], {"convex (split)": "a"}, set(), 0.95, 1000,
+            2, tmp_path / "x.pdf", (6.0, 4.0))
+
+
+def test_lambda2_panels_rejects_a_kind_count_mismatch(tmp_path):
+    summary = make_summary()
+    kind = causal_sim_plots.coverage_kind(0.95, 1000)
+    with pytest.raises(ValueError, match="one kind per row"):
+        causal_sim_plots.plot_lambda2_panels(
+            panel_grid(summary, 2), ["convex (split)"],
+            {"convex (split)": "a"}, set(), tmp_path / "x.pdf", [kind],
+            (6.0, 4.0), ncol=2)
+
+
+def test_spaced_axes_groups_rows():
+    spacing = causal_sim_plots.RowSpacing(group_size=2)
+    fig, axes = causal_sim_plots._spaced_axes(4, 3, (6.0, 8.0), spacing)
+    assert [len(row) for row in axes] == [3, 3, 3, 3]
+    with pytest.raises(ValueError, match="multiple"):
+        causal_sim_plots._spaced_axes(3, 3, (6.0, 8.0), spacing)
+    causal_sim_plots.plt.close("all")

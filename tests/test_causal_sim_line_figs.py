@@ -63,3 +63,14 @@ def test_method_sets_keep_the_full_figure_styles():
     # Every set is a subset of METHODS, whose order sets the styles.
     for methods in causal_sim_line_figs.METHOD_SETS.values():
         assert set(methods) <= set(causal_sim_line_figs.METHODS)
+
+
+def test_merged_grid_panels_titles_coverage_and_labels_each_design(tmp_path):
+    path = tmp_path / "summary_full.csv"
+    write_summary(path)
+    rows = [causal_sim_line_figs.load_row(path, "continuous", [3.0])]
+    coverage, excess = causal_sim_line_figs.merged_grid_panels(rows)
+    assert coverage[0][0].title == r"$\Lambda_1 = 3$"
+    assert excess[0][0].title == ""
+    assert coverage[0][0].ylabel == "Continuous\njoint coverage"
+    assert excess[0][0].ylabel == "Continuous\nexcess width"

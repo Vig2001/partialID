@@ -376,6 +376,52 @@ class LineStyle(NamedTuple):
     line_width: float = LINE_WIDTH
 
 
+class RowKind(NamedTuple):
+    """What one row of panels plots, and how its axes are drawn."""
+
+    values: Callable[[pd.DataFrame], tuple[pd.Series, pd.Series]]
+    sharey: bool  # the row's panels share the first panel's y-axis
+    reference: tuple[float, float] | None = None  # (level, half-width)
+    log_y: bool = False
+    xlabel: bool = True  # label the Lambda_2 axis and its ticks
+    integer_x: bool = False  # Lambda_2 ticks at integers only
+
+
+class RowSpacing(NamedTuple):
+    """Rows in groups of group_size, drawn hspace apart (a fraction of the
+    mean panel height) within a group and wspace apart across; tight_layout
+    sets the gaps between groups. (An explicit hspace on the top-level grid
+    would make tight_layout skip the figure, so each group is a sub-grid.)
+    """
+
+    group_size: int
+    hspace: float = 0.12
+    wspace: float = 0.35
+
+
+def excess_width_kind(
+    nominal: float,
+    undercover_ses: float,
+    log_y: bool,
+    xlabel: bool = True,
+    integer_x: bool = False,
+) -> RowKind:
+    """Excess-width row: each panel scales its own y-axis."""
+    return RowKind(
+        lambda cells: excess_width_values(cells, nominal, undercover_ses),
+        sharey=False, log_y=log_y, xlabel=xlabel, integer_x=integer_x)
+
+
+def coverage_kind(
+    nominal: float, reps: int, xlabel: bool = True, integer_x: bool = False
+) -> RowKind:
+    """Coverage row: a shared y-axis and a grey band of nominal +/- 2
+    binomial MC s.e. with reps replicates."""
+    band = 2 * np.sqrt(nominal * (1 - nominal) / reps)
+    return RowKind(coverage_values, sharey=True, reference=(nominal, band),
+                   xlabel=xlabel, integer_x=integer_x)
+
+
 def row_panels(
     rows: Sequence[LambdaRow], ylabel: str
 ) -> list[list[LambdaPanel]]:
@@ -418,12 +464,11 @@ def plot_excess_width_by_lambda2(
     widths are small). A marker is hollow where joint coverage is more than
     undercover_ses MC s.e. below nominal. Arguments as plot_lambda2_panels.
     """
+    kind = excess_width_kind(nominal, undercover_ses, log_y)
     plot_lambda2_panels(
-        panels, methods, labels, dashed, out_path,
-        values=lambda cells: excess_width_values(cells, nominal,
-                                                 undercover_ses),
-        sharey=False, figsize=figsize, ncol=ncol, row_starts=row_starts,
-        log_y=log_y, style_order=style_order, line_style=line_style)
+        panels, methods, labels, dashed, out_path, [kind] * len(panels),
+        figsize=figsize, ncol=ncol, row_starts=row_starts,
+        style_order=style_order, line_style=line_style)
 
 
 def plot_coverage_by_lambda2(
@@ -446,12 +491,60 @@ def plot_coverage_by_lambda2(
     The grey band is nominal +/- 2 binomial MC s.e. with reps replicates.
     Arguments as plot_lambda2_panels.
     """
-    band = 2 * np.sqrt(nominal * (1 - nominal) / reps)
+    kind = coverage_kind(nominal, reps)
     plot_lambda2_panels(
-        panels, methods, labels, dashed, out_path, values=coverage_values,
-        sharey=True, figsize=figsize, ncol=ncol, row_starts=row_starts,
-        reference=(nominal, band), style_order=style_order,
-        line_style=line_style)
+        panels, methods, labels, dashed, out_path, [kind] * len(panels),
+        figsize=figsize, ncol=ncol, row_starts=row_starts,
+        style_order=style_order, line_style=line_style)
+
+
+def plot_coverage_and_excess_by_lambda2(
+    coverage_panels: Sequence[Sequence[LambdaPanel]],
+    excess_panels: Sequence[Sequence[LambdaPanel]],
+    methods: Sequence[str],
+    labels: Mapping[str, str],
+    dashed: Collection[str],
+    nominal: float,
+    reps: int,
+    undercover_ses: float,
+    out_path: Path,
+    figsize: tuple[float, float],
+    ncol: int = 4,
+    row_starts: Collection[int] = (),
+    log_y: bool = False,
+    style_order: Sequence[str] | None = None,
+    line_style: LineStyle = LineStyle(),
+) -> None:
+    """Joint coverage above excess width against Lambda_2, in one figure.
+
+    As toy_sim_plots.plot_coverage_and_excess_by_gap (since 2026-11-17):
+    each design's coverage row is drawn directly above its excess-width
+    row, only the excess-width rows label the Lambda_2 axis, and its ticks
+    are integers (the four-panel rows had "2.5, 5.0").
+
+    Args:
+        coverage_panels: One row of coverage panels per design.
+        excess_panels: The excess-width panels, row for row with
+            coverage_panels.
+        Others: as plot_coverage_by_lambda2 and plot_excess_width_by_lambda2.
+
+    Raises:
+        ValueError: If the two panel grids have different numbers of rows.
+    """
+    if len(coverage_panels) != len(excess_panels):
+        raise ValueError("need one excess-width row per coverage row, got "
+                         f"{len(coverage_panels)} and {len(excess_panels)}")
+    panels, kinds = [], []
+    for coverage_row, excess_row in zip(coverage_panels, excess_panels):
+        panels += [coverage_row, excess_row]
+        kinds += [coverage_kind(nominal, reps, xlabel=False, integer_x=True),
+                  excess_width_kind(nominal, undercover_ses, log_y,
+                                    integer_x=True)]
+    spacing = RowSpacing(group_size=2)
+    plot_lambda2_panels(
+        panels, methods, labels, dashed, out_path, kinds, figsize=figsize,
+        ncol=ncol, row_starts=row_starts, style_order=style_order,
+        line_style=line_style, spacing=spacing)
 
 
 def plot_lambda2_panels(
@@ -460,15 +553,13 @@ def plot_lambda2_panels(
     labels: Mapping[str, str],
     dashed: Collection[str],
     out_path: Path,
-    values: Callable[[pd.DataFrame], tuple[pd.Series, pd.Series]],
-    sharey: bool,
+    kinds: Sequence[RowKind],
     figsize: tuple[float, float],
     ncol: int,
     row_starts: Collection[int] = (),
-    reference: tuple[float, float] | None = None,
-    log_y: bool = False,
     style_order: Sequence[str] | None = None,
     line_style: LineStyle = LineStyle(),
+    spacing: RowSpacing | None = None,
 ) -> None:
     """One line per method against Lambda_2, in a grid of panels.
 
@@ -482,24 +573,27 @@ def plot_lambda2_panels(
         labels: Legend label per method.
         dashed: Methods drawn with dashed lines; the others are solid.
         out_path: Where to save the figure (format from the suffix).
-        values: Maps a method's cells (lambda2_series) to (y, hollow).
-        sharey: Whether the panels of a row share their y-axis.
+        kinds: What each row plots (values, shared y-axis, reference band,
+            log scale, x-label), one per row of panels.
         figsize: Figure size in inches; include it at this size.
         ncol: Legend entries per row.
         row_starts: Indices in methods whose legend entry starts a new row.
-        reference: (level, half-width) of a grey reference band, or None.
-        log_y: Whether the y-axes are logarithmic (values must be positive).
         style_order: Methods whose order sets each method's colour and
             marker (toy_sim_plots.method_styles), so that a subset keeps the
             full figure's styles; defaults to methods.
         line_style: Marker size and line width.
+        spacing: Row gaps (RowSpacing); None keeps matplotlib's even gaps.
 
     Raises:
-        ValueError: If panels is empty, a method has no style, or a panel's
-            summary has no cell at its Lambda_1.
+        ValueError: If panels is empty, kinds does not match its rows, a
+            method has no style, or a panel's summary has no cell at its
+            Lambda_1.
     """
     if not panels or not any(panels):
         raise ValueError("need at least one panel")
+    if len(kinds) != len(panels):
+        raise ValueError(f"need one kind per row, got {len(kinds)} kinds "
+                         f"for {len(panels)} rows")
     styles = toy_sim_plots.method_styles(
         methods if style_order is None else style_order)
     unstyled = [m for m in methods if m not in styles]
@@ -507,13 +601,19 @@ def plot_lambda2_panels(
         raise ValueError(f"no style for {unstyled}; add them to style_order")
     ncols = max(len(row) for row in panels)
     with plt.rc_context({"font.size": toy_sim_plots.PAPER_FONT_SIZE}):
-        fig, axes = plt.subplots(len(panels), ncols, figsize=figsize,
-                                 sharey="row" if sharey else False,
-                                 squeeze=False)
-        for row, row_axes in zip(panels, axes):
+        if spacing is None:
+            fig, axes = plt.subplots(len(panels), ncols, figsize=figsize,
+                                     squeeze=False)
+        else:
+            fig, axes = _spaced_axes(len(panels), ncols, figsize, spacing)
+        for row, row_axes, kind in zip(panels, axes, kinds):
+            if kind.sharey:  # share before drawing, so autoscaling is joint
+                for ax in row_axes[1:]:
+                    ax.sharey(row_axes[0])
+                    ax.tick_params(labelleft=False)
             for ax, panel in zip(row_axes, row):
-                _draw_lambda_panel(ax, panel, methods, styles, dashed, values,
-                                   reference, log_y, line_style)
+                _draw_lambda_panel(ax, panel, methods, styles, dashed, kind,
+                                   line_style)
         handles = [_legend_handle(styles[m], m in dashed, line_style)
                    for m in methods]
         toy_sim_plots.legend_below(fig, handles, [labels[m] for m in methods],
@@ -522,20 +622,41 @@ def plot_lambda2_panels(
     plt.close(fig)
 
 
+def _spaced_axes(
+    nrows: int, ncols: int, figsize: tuple[float, float], spacing: RowSpacing
+) -> tuple[plt.Figure, list[list[plt.Axes]]]:
+    """Axes grid in groups of spacing.group_size rows (RowSpacing).
+
+    Raises:
+        ValueError: If nrows is not a multiple of spacing.group_size.
+    """
+    if nrows % spacing.group_size:
+        raise ValueError(f"{nrows=} is not a multiple of "
+                         f"{spacing.group_size=}")
+    fig = plt.figure(figsize=figsize)
+    groups = fig.add_gridspec(nrows // spacing.group_size, 1)
+    axes = []
+    for group in groups:
+        grid = group.subgridspec(spacing.group_size, ncols,
+                                 hspace=spacing.hspace,
+                                 wspace=spacing.wspace)
+        axes += [[fig.add_subplot(grid[r, c]) for c in range(ncols)]
+                 for r in range(spacing.group_size)]
+    return fig, axes
+
+
 def _draw_lambda_panel(
     ax: plt.Axes,
     panel: LambdaPanel,
     methods: Sequence[str],
     styles: Mapping[str, tuple[str, str]],
     dashed: Collection[str],
-    values: Callable[[pd.DataFrame], tuple[pd.Series, pd.Series]],
-    reference: tuple[float, float] | None,
-    log_y: bool,
+    kind: RowKind,
     line_style: LineStyle,
 ) -> None:
     """Draws every method's line in one panel on ax (mutates ax)."""
-    if reference is not None:
-        level, half_width = reference
+    if kind.reference is not None:
+        level, half_width = kind.reference
         ax.axhspan(level - half_width, level + half_width,
                    color=toy_sim_plots.GREY_BAND, lw=0)
         ax.axhline(level, color=toy_sim_plots.GREY_LINE, lw=0.8)
@@ -546,16 +667,21 @@ def _draw_lambda_panel(
         if method not in present:
             continue
         cells = lambda2_series(panel.summary, method, panel.lambda_1)
-        y, hollow = values(cells)
+        y, hollow = kind.values(cells)
         _draw_series(ax, cells.lambda_2.to_numpy(), y.to_numpy(),
                      hollow.to_numpy(), styles[method], method in dashed,
                      line_style)
-    ax.set_xlabel(r"$\Lambda_2$")
+    if kind.xlabel:
+        ax.set_xlabel(r"$\Lambda_2$")
+    else:  # the panel below labels the same Lambda_2 axis
+        ax.tick_params(labelbottom=False)
+    if kind.integer_x:
+        ax.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
     if panel.title:
         ax.set_title(panel.title)
     if panel.ylabel:
         ax.set_ylabel(panel.ylabel)
-    if log_y:
+    if kind.log_y:
         set_log_y_axis(ax)
     else:
         ax.yaxis.set_major_locator(ticker.MaxNLocator(4, steps=[1, 2, 5, 10]))
