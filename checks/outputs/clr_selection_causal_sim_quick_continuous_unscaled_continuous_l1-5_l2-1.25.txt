@@ -1,0 +1,19 @@
+Run causal_sim_quick_continuous_unscaled, continuous, Lambda_1 = 5, Lambda_2 = 1.25; true band [-0.23704, 0.23704]; gamma_n = 0.98722 (n = 2500); p = 0.975; 200000 fresh draws per replicate-end (seed 1); weight grid of 201
+CLR intersection with selection
+  k_gamma: analytic 2.4887; (simulated - analytic) / MC s.e. over 2000 replicate-ends: mean -0.022 (s.e. 0.022), sd 0.982
+  some bound or weight dropped (analytic) in 2000 of 2000 replicate-ends; kept sets differ in 0 (selection threshold crossed by the simulated k_gamma)
+  k_p where kept sets agree (2000): mean analytic 1.9600, simulated 1.9599; (simulated - analytic) / MC s.e.: mean -0.004 (s.e. 0.022), sd 0.963, max |.| 3.82; median MC s.e. 0.0060
+  the same, replicate-ends where something is dropped (2000): mean z -0.004, sd 0.963
+  CI end where kept sets agree, (simulated - analytic) / smaller s.e.: mean -0.0001, max |.| 0.0374
+  CI end, analytic on this grid - on 1001 weights, / smaller s.e.: max |.| 0.00e+00
+  analytic: joint coverage 0.9490, mean width 1.00959
+  sim     : joint coverage 0.9490, mean width 1.00958
+convex CLR with selection
+  k_gamma: analytic 2.6111; (simulated - analytic) / MC s.e. over 2000 replicate-ends: mean +0.045 (s.e. 0.022), sd 0.984
+  some bound or weight dropped (analytic) in 2000 of 2000 replicate-ends; kept sets differ in 383 (selection threshold crossed by the simulated k_gamma)
+  k_p where kept sets agree (1617): mean analytic 2.1546, simulated 2.1546; (simulated - analytic) / MC s.e.: mean -0.011 (s.e. 0.025), sd 0.967, max |.| 3.72; median MC s.e. 0.0059
+  the same, replicate-ends where something is dropped (1617): mean z -0.011, sd 0.967
+  CI end where kept sets agree, (simulated - analytic) / smaller s.e.: mean -0.0001, max |.| 0.0388
+  CI end, analytic on this grid - on 1001 weights, / smaller s.e.: max |.| 4.66e-03
+  analytic: joint coverage 0.9690, mean width 1.06240
+  sim     : joint coverage 0.9690, mean width 1.06240

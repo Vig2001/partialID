@@ -39,7 +39,7 @@ Both scripts stop if the clone is at another commit or their scripts are edited.
 - `src/outputs/`: only the runs and outputs the paper uses (below). Which file goes where in the paper is in `partialID_Overleaf/Figures/PROVENANCE.md`.
 - `R/causal_sim_quick.R`: the paper's causal simulation. Two observational studies from the Dorn, Guo & Kallus DGP with parametric nuisances (`R/helpers/dvds_lean.R`). It sources `R/causal_sim.R` (the full DGK-forest version) and every helper in `R/helpers/`. Explained in `partialID_Overleaf/Notes/Simulation_Notes/causal_sim_quick_explained.tex`.
 - `R/helpers/`: `dgk.R` (DGK's data generation and `dvds.binary()`, `dvds.continuous()`, used as is), `data_fusion_design.R` (two-study design, folds, true bands), `run_time.R`, `ci_methods.R` and `mc_metrics.R` (ports of the Python modules).
-- `checks/`: one-off numerical checks (`clr_selection_check.py`: analytical against simulated CLR critical values; it reads a run now archived in `Outdated/outputs/causal_sim_quick_continuous/`).
+- `checks/`: one-off numerical checks (`clr_selection_check.py`: analytical against simulated critical values for the CLR CIs with adaptive inequality selection, in one cell of `causal_sim_quick_continuous_unscaled` by default; about 1 min).
 
 ```
 projectone/

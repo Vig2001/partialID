@@ -28,7 +28,7 @@ of a simulated quantile is sqrt(level (1 - level) / draws) / f(k), with f the
 analytical density of the sup at k. Default run: about 2 minutes.
 
 Usage, from the repo root (needs the run's estimates.csv and true_bands.csv):
-    python checks/clr_selection_check.py [--run causal_sim_quick_continuous]
+    python checks/clr_selection_check.py [--run causal_sim_quick_continuous_unscaled]
         [--outcome continuous] [--lambda-1 5] [--lambda-2 1.25]
         [--draws 200000] [--grid-size 201] [--seed 1]
 Outputs, in checks/outputs/:
@@ -167,6 +167,7 @@ def convex_end(
     return pd.DataFrame({
         "k_gamma_analytic": k_gamma, "k_gamma_sim": sim["k_gamma"],
         "k_gamma_mc_se": k_gamma_mc_se,
+        "family_size": len(w_grid),
         "kept_analytic": kept.sum(axis=1), "kept_sim": sim["kept"],
         "k_p_analytic": k_p, "k_p_sim": sim["k_p"], "k_p_mc_se": mc_se,
         "end_analytic": end, "end_sim": sim["end"],
@@ -212,6 +213,7 @@ def intersection_end(
     return pd.DataFrame({
         "k_gamma_analytic": k_gamma, "k_gamma_sim": k_gamma_sim,
         "k_gamma_mc_se": k_gamma_mc_se,
+        "family_size": theta.shape[1],
         "kept_analytic": m, "kept_sim": kept_sim,
         "k_p_analytic": k_p, "k_p_sim": k_p_sim, "k_p_mc_se": mc_se,
         "end_analytic": end, "end_sim": end_sim,
@@ -231,7 +233,8 @@ def summarise(per_end: pd.DataFrame, true_band: tuple[float, float]) -> str:
         end_diff = (agree.end_sim - agree.end_analytic) / agree.se_min
         grid_diff = ((rows.end_analytic - rows.end_analytic_full_grid)
                      / rows.se_min)
-        dropped = rows.kept_analytic < rows.kept_analytic.max()
+        # Dropped: fewer kept than the whole family (bounds or weights).
+        dropped = rows.kept_analytic < rows.family_size
         lines += [
             f"{method}",
             f"  k_gamma: analytic {rows.k_gamma_analytic.iloc[0]:.4f}; "
@@ -268,7 +271,7 @@ def summarise(per_end: pd.DataFrame, true_band: tuple[float, float]) -> str:
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--run", default="causal_sim_quick_continuous",
+    parser.add_argument("--run", default="causal_sim_quick_continuous_unscaled",
                         help="Folder in src/outputs/ with estimates.csv.")
     parser.add_argument("--outcome", choices=("continuous", "binary"),
                         default="continuous")
