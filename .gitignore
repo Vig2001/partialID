@@ -36,3 +36,15 @@ external/
 # DGK replication: their outputs (no licence) and our large rerun CSVs
 src/outputs/dgk_replication/original/
 src/outputs/dgk_replication/replication/*.csv
+
+# Archived runs (same rules as src/outputs/)
+Outdated/outputs/**/*.pkl
+Outdated/outputs/**/*.npy
+Outdated/outputs/**/*.npz
+Outdated/outputs/causal_sim*/estimates.csv
+Outdated/outputs/causal_sim*/summary_full.csv
+Outdated/outputs/dgk_replication/original/
+Outdated/outputs/dgk_replication/replication/*.csv
+
+# Downloaded Overleaf archives
+*.zip

@@ -16,6 +16,6 @@ Apply five lenses:
 
 Respect each section's stated assumptions and the "Corrections" in projectone/CLAUDE.md. For example, in the known-variance Gaussian section never suggest replacing $\sigma_k^2$ with an estimate. Compare CI widths only between methods with valid coverage.
 
-Ignore `scripts_misc/`: it is outdated rough work, not the source of truth. Don't review it, compare against it or cite it unless I explicitly ask.
+Ignore `Outdated/`: it is outdated rough work, not the source of truth. Don't review it, compare against it or cite it unless I explicitly ask.
 
 Do not edit files. Return a report grouped as Critical / Major / Minor, each with location, the problem, why it matters, and a suggested fix. If something is correct but you are unsure, say so rather than raising it as an error.

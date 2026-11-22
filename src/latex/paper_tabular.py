@@ -11,7 +11,7 @@ SAMPLE_SPLITTING = "Sample splitting"
 SIMULTANEOUS = r"\shortstack{Simultaneous\\ inference}"
 SELECTION = r"\shortstack{Adaptive inequality\\ selection}"
 # Comparator set and column header of each method, by its name in the causal
-# summaries (src/latex/causal_sim_tables.py); toy methods map to these names.
+# summaries (Outdated/src/latex/causal_sim_tables.py); toy methods map to these names.
 COLUMNS = {
     # Names since 2026-11-16 (supervisor): Intersection/Convex (procedure);
     # Intersection (CLR) is the Sidak-corrected intersection.

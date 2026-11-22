@@ -43,7 +43,7 @@ Drift that warrants a reminder:
 - Changing numerical code with no tests, or refactoring without first locking
   in behaviour with tests (once `tests/` exists).
 - Functions that both mutate an argument *and* return it; mutable globals.
-- New work built on top of `scripts_misc/` instead of `src/`.
+- New work built on top of `Outdated/` instead of `src/`.
 - A figure or table for the paper with no record of which code produced it.
 - Heavy results or data files committed to git.
 
@@ -73,7 +73,7 @@ projectone/
 │   │   └── __init__.py
 │   ├── outputs/            # generated results (heavy files gitignored)
 │   └── toy_sim.py          # current toy example / entry script
-├── scripts_misc/           # ARCHIVE: old rough working. Read-only, see below
+├── Outdated/               # ARCHIVE: old code, scripts_misc/ and unused runs. Read-only, see below
 ├── tests/                  # pytest tests, mirroring src/ module names
 ├── partialID_Overleaf/     # SEPARATE git repo, synced with Overleaf (the paper)
 │   └── Figures/            # figures the paper uses
@@ -100,7 +100,9 @@ Rules:
 - **The package is installed in editable mode** (`pip install -e .` inside
   `project1venv`). Import by package path from anywhere:
   `from src.helpers import bounds`. **Never** manipulate `sys.path`.
-- **`scripts_misc/` is an archive** of old rough working. Do not edit it,
+- **`Outdated/` is an archive** of old rough working (`Outdated/scripts_misc/`),
+  code the paper no longer uses (`Outdated/src/`, `Outdated/R/`) and the data of
+  unused runs (`Outdated/outputs/`). Do not edit it,
   import from it, lint it, test it, or build new work on it unless I ask. If
   something there is worth keeping, propose porting it into `src/` properly
   (with tests).
@@ -341,7 +343,7 @@ def compute_bounds(
 ## 11. Keep things tidy
 
 - Delete dead code in `src/` rather than commenting it out; git remembers.
-- Old exploratory code goes to `scripts_misc/`, not left in `src/`.
+- Old exploratory code goes to `Outdated/`, not left in `src/`.
 - Tidy before shelving the project (e.g. after submitting a manuscript).
 
 ---

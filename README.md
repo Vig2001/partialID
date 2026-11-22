@@ -1,8 +1,6 @@
 # Confidence Intervals for Data-Fusion based Partial Identification
 
-`scripts_misc/` contains outdated preliminary exploration (old scripts, `intuition/`, `figures/`). It is not the source of truth.
-
-`src/` contains the current project code. The aim is to provide confidence intervals for partial ID in data fusion settings, which is not entirely obvious. 
+`src/` and `R/` contain the code behind the CLeaR 2027 submission: the toy simulation (Python) and the causal simulation (R), plus the scripts that draw the paper's figures. `Outdated/` archives everything else: old exploration (`Outdated/scripts_misc/`), code the paper no longer uses (`Outdated/src/`, `Outdated/R/`) and the data of unused runs (`Outdated/outputs/`, figures and tables removed). It is not the source of truth.
 
 Note: settings.json blocks Claude reading private_data/ (for future data-use agreements), if using open source data will need to store in a separate public_data folder.
 
@@ -24,7 +22,7 @@ Rscript -e 'renv::restore()'
 
 The renv cache is disabled for this project (`renv/settings.json`), so packages live in `renv/library/` (gitignored). To add a package: `install.packages("pkg")` from the repo root, use it in `R/`, then `Rscript -e 'renv::snapshot()'` and commit `renv.lock`. renv only records packages named literally in `R/` (`pkg::fn`, `library(pkg)`, `requireNamespace("pkg")`).
 
-**DGK's code (for `R/causal_sim.R` and `R/dgk_replication.R`).** The causal simulation runs the code of Dorn, Guo & Kallus unmodified. Clone their repository at the pinned commit into `external/` (gitignored):
+**DGK's code (for `R/causal_sim.R` and `R/causal_sim_quick.R`).** The causal simulation runs the code of Dorn, Guo & Kallus unmodified. Clone their repository at the pinned commit into `external/` (gitignored):
 
 ```
 git clone https://github.com/CausalML/DoublyValidDoublySharpSensitivity.git external/DoublyValidDoublySharpSensitivity
@@ -34,17 +32,14 @@ git -C external/DoublyValidDoublySharpSensitivity checkout 26cbbf6e90dcd0648c837
 Both scripts stop if the clone is at another commit or their scripts are edited. Their repository has no licence file: use it privately and don't copy it into a public release (point to the commit instead).
 
 ### Layout
-- `src/toy_sim.py`: known-true-band toy comparing the intersection CI with the convex combination CI, and the CLR intersection bounds (M8) and CLR over all convex combinations (M9, a convex CI without a sample split) with the split and cross-fitted convex CIs.
-- `src/toy_convergence.py`: estimated bands in the toy as n grows: the split for a difference in population means and for equal means, and the standardised bias of split and intersection at small gaps (uniform convergence).
-- `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights). Old ZSB/NIW helpers and plots are archived in `scripts_misc/outdated_help/`.
-- `src/plotting/`: figure code (`toy_sim_plots.py` for the toy).
-- `src/outputs/<script>/`: results and figures written by each script.
-- `R/causal_sim.R`: two observational studies from the Dorn, Guo & Kallus DGP (different n and Λ), each with a binary and a continuous outcome; compares calibrated intersection, single-study and convex split CIs. Explained in `partialID_Overleaf/Notes/Simulation_Notes/causal_sim_code_explained.tex`.
-- `R/dgk_replication.R`: runs DGK's own simulation (paper Section 7.1) unmodified and compares it with their committed results.
-- `R/helpers/`: `dgk.R` (DGK's data generation, nuisances, `dvds.binary()` and `dvds.continuous()`, used as is), `data_fusion_design.R` (our two-study design: folds, true bands: closed form for continuous, Monte Carlo for binary), `run_time.R`, `ci_methods.R` and `mc_metrics.R` (ports of the Python modules).
-
-### Structure (Python and R)
-The DVDS simulation is written in R (`R/`, `renv.lock`). Stata's `clrbound` (through `RStata`) may be added later; `R/stata/` doesn't exist yet. Python stays in `src/`; R has its own top-level folder; all outputs go to `src/outputs/<script>/`, so provenance and `/update-paper-figs` work the same for both languages.
+- `src/toy_sim.py`: known-true-band toy comparing intersection and convex-combination CIs (split, cross-fit, CLR, with and without adaptive inequality selection).
+- `src/helpers/`: numerical code (`ci_methods.py` CIs, `mc_metrics.py` Monte Carlo summaries, `weight_optimisers.py` convex weights).
+- `src/plotting/`: figure code (`toy_sim_plots.py`, `causal_sim_plots.py`).
+- `src/latex/`: scripts that write the paper's figures and tables (`toy_sim_paper_figs.py`, `causal_sim_line_figs.py`, `toy_sim_slide_figs.py` with `paper_tabular.py` for the toy table).
+- `src/outputs/`: only the runs and outputs the paper uses (below). Which file goes where in the paper is in `partialID_Overleaf/Figures/PROVENANCE.md`.
+- `R/causal_sim_quick.R`: the paper's causal simulation. Two observational studies from the Dorn, Guo & Kallus DGP with parametric nuisances (`R/helpers/dvds_lean.R`). It sources `R/causal_sim.R` (the full DGK-forest version) and every helper in `R/helpers/`. Explained in `partialID_Overleaf/Notes/Simulation_Notes/causal_sim_quick_explained.tex`.
+- `R/helpers/`: `dgk.R` (DGK's data generation and `dvds.binary()`, `dvds.continuous()`, used as is), `data_fusion_design.R` (two-study design, folds, true bands), `run_time.R`, `ci_methods.R` and `mc_metrics.R` (ports of the Python modules).
+- `checks/`: one-off numerical checks (`clr_selection_check.py`: analytical against simulated CLR critical values; it reads a run now archived in `Outdated/outputs/causal_sim_quick_continuous/`).
 
 ```
 projectone/
@@ -52,26 +47,26 @@ projectone/
 │   ├── toy_sim.py            # entry script: python -m src.toy_sim
 │   ├── helpers/              # CIs, MC summaries, weight optimisers
 │   ├── plotting/             # figure code
-│   ├── latex/                # writes slide/paper figures and tables
-│   └── outputs/<script>/     # results from Python and R scripts
-│       └── causal_sim/       # e.g. written by R/causal_sim.R
-├── R/                        # R code (not part of the Python package)
-│   ├── causal_sim.R          # entry script: Rscript R/causal_sim.R --seed ...
-│   ├── dgk_replication.R     # reruns DGK's simulation, compares with theirs
-│   ├── helpers/              # DGK adapter, bounds, CI methods, MC summaries
-│   └── stata/                # (planned) .do files for clrbound, via RStata
+│   ├── latex/                # writes the paper's figures and table
+│   └── outputs/
+│       ├── toy_sim_g2/                            # toy run (gaps up to 2), 2 figures, table
+│       ├── causal_sim_quick_{continuous,binary}_unscaled/   # causal runs
+│       └── causal_sim_line_figs/non_scaled/merged_plots/    # 3 causal figures
+├── R/
+│   ├── causal_sim_quick.R    # entry script: Rscript R/causal_sim_quick.R ...
+│   ├── causal_sim.R          # DGK-forest version; sourced by causal_sim_quick.R
+│   └── helpers/
+├── tests/                    # pytest unit tests
+├── checks/                   # one-off numerical checks
+├── Outdated/                 # archive: scripts_misc/, src/, R/, outputs/
 ├── external/                 # DGK's repository at a pinned commit (gitignored)
-├── renv.lock                 # pinned R packages (R's requirements.txt)
-├── renv/, .Rprofile          # renv activation; renv/library/ is gitignored
-├── requirements.txt          # pinned Python packages
-├── pyproject.toml            # installs src/ only
-└── tests/                    # pytest unit tests (pytest not installed yet)
+├── renv.lock, renv/, .Rprofile
+├── requirements.txt, pyproject.toml
+└── partialID_Overleaf/       # the paper: a separate git repo (gitignored here)
 ```
 
-Non-Python requirements: R (packages via `renv`), and Stata with `clrbound` (`ssc install clrbound`) for the intersection-bounds comparison. Record the R, Stata and `clrbound` versions with any results that use them.
-
 ### Public release
-This repo is private and contains working files that won't be published (`.claude/`, `CLAUDE.md`, `AGENTS.md`, `quality_reports/`, `scripts_misc/`); the paper lives in its own repo. Adding them to `.gitignore` is not enough, because anything already committed stays visible in the git history.
+This repo is private and contains working files that won't be published (`.claude/`, `CLAUDE.md`, `AGENTS.md`, `quality_reports/`, `Outdated/`); the paper lives in its own repo. Adding them to `.gitignore` is not enough, because anything already committed stays visible in the git history.
 
 When the paper is released, create a **separate public repo with a fresh history** that contains only the code needed to reproduce the results:
 
@@ -83,68 +78,30 @@ When the paper is released, create a **separate public repo with a fresh history
 `projectone` stays the private working repo.
 
 ### Running
-Run entry scripts as modules from the repo root with the environment active, e.g.
+Run everything from the repo root with the environment active. The paper's results come from these runs. The figure commands are in `partialID_Overleaf/Figures/PROVENANCE.md`.
 
 ```
-python -m src.toy_sim            # defaults: --seed 7 --reps 5000 --frac-a 0.3
+python -m src.toy_sim --gaps 0 0.05 0.1 0.2 0.5 1 2 --out-dir src/outputs/toy_sim_g2 --no-plots   # seed 7, 5000 reps
 python -m src.toy_sim --help     # all options
-python -m src.toy_convergence    # defaults: --seed 7 --reps 5000 --gaps 0.05 0.2 0.5 --uniform-gaps 0.01 0.02 0.05 0.1 0.2 --ratio 2
-python -m src.latex.toy_sim_paper_figs  # paper figure from results.csv (no rerun): coverage_by_gap_r1-3-5.pdf; --ratios 1 3 5
-python -m pytest                 # unit tests in tests/ (needs pytest, not yet in requirements.txt)
+python -m pytest                 # unit tests in tests/
 ```
 
-The R simulation also runs from the repo root:
+The two causal designs (n = 2000 and 500, 1000 replicates, about 5-10 min each):
 
 ```
-Rscript R/causal_sim.R                    # defaults: --seed 1 --reps 1000 --n1 2000 --n2 500
-Rscript R/causal_sim.R --help             # all options
-Rscript R/causal_sim.R --summarise-only   # recompute CIs from saved estimates.csv
-caffeinate -is Rscript R/causal_sim.R     # keep a Mac awake (plugged in, lid open)
+Rscript R/causal_sim_quick.R --reps 1000 --n1 2000 --n2 500 --outcomes continuous --lambdas-1 2:5:1 --lambdas-2 1:6:0.25 --out-dir src/outputs/causal_sim_quick_continuous_unscaled
+Rscript R/causal_sim_quick.R --reps 1000 --n1 2000 --n2 500 --outcomes binary --lambdas-1 2:5:1 --lambdas-2 1:6:0.25 --out-dir src/outputs/causal_sim_quick_binary_unscaled
+Rscript R/causal_sim_quick.R --help    # all options (noise scaling, rare outcome, forest nuisances)
 ```
 
-The design of `quality_reports/plans/done/2026-11-03_convex-advantage-noise-design.md` scales study 2's continuous outcome noise by c = 2 and gives each study its own Λ grid:
+Inside Claude's sandbox add `--workers 1 --backend sequential`. `--summarise-only` recomputes the CIs from a saved `estimates.csv`.
 
-```
-caffeinate -is Rscript R/causal_sim.R --noise-scale-2 2 --lambdas-1 3:5:0.05 --lambdas-2 1:3:0.05 --out-dir src/outputs/causal_sim_noise
-```
-
-The rare-outcome design of `quality_reports/plans/done/2026-11-05_binary-rare-outcome-k15.md` makes study 1's binary outcome rare, P(Y = 1 | x) = 1 / (k + exp(eta(x))) with k = 15 (prevalence about 6%), and estimates the binary outcome only (`--outcomes binary` skips DGK's slow continuous estimator; about 1.5 h for 1000 replicates on 9 workers):
-
-```
-caffeinate -is Rscript R/causal_sim.R --reps 1000 --n1 3000 --n2 500 --binary-denominator-1 15 --outcomes binary --lambdas-1 1:4:0.05 --lambdas-2 1:2:0.05 --workers 9 --out-dir src/outputs/causal_sim_binary_k15
-```
-
-**Lean version.** `R/causal_sim_quick.R` runs the same design with parametric nuisances on the true functional forms (`R/helpers/dvds_lean.R`, predicted out of fold within each fit). It adds the cross-fitted convex CI and both CLR CIs, and takes about 4 min per design for 1000 replicates on 9 workers. The two paper designs:
-
-```
-Rscript R/causal_sim_quick.R --reps 1000 --n1 3000 --n2 500 --noise-scale-2 2.5 --outcomes continuous --lambdas-1 3:5:0.05 --lambdas-2 1:3:0.05 --workers 9 --out-dir src/outputs/causal_sim_quick_continuous
-Rscript R/causal_sim_quick.R --reps 1000 --n1 3000 --n2 500 --binary-denominator-1 15 --outcomes binary --lambdas-1 1:4:0.05 --lambdas-2 1:2:0.05 --workers 9 --out-dir src/outputs/causal_sim_quick_binary_k15
-python -m src.latex.causal_sim_paper_figs --summary src/outputs/causal_sim_quick_continuous/summary_full.csv --outcome continuous  # width / best valid width, box per method
-```
-
-`--nuisances forest` runs the same comparison with DGK's forests, binary outcome only; its full, fold A and fold B fits equal `R/causal_sim.R`'s, and, as in the lean mode, the cross-fitted CI uses standard cross-fitting (nuisances fitted on each fold's complement predict the fold). About 3–4 h for 1000 replicates on 9 workers; parallel workers need the real core count, so run it outside Claude's sandbox:
-
-```
-caffeinate -is Rscript R/causal_sim_quick.R --nuisances forest --reps 1000 --n1 3000 --n2 500 --binary-denominator-1 15 --outcomes binary --lambdas-1 1:4:0.05 --lambdas-2 1:2:0.05 --workers 9 --out-dir src/outputs/causal_sim_forest_binary_k15
-```
-
-Explained in `partialID_Overleaf/Notes/Simulation_Notes/causal_sim_quick_explained.tex`.
-
-Replicates run in parallel (default: available cores minus 1; one grf thread per worker); results do not depend on the number of workers. The default Λ grid (both studies) is DGK's, `seq(1, 3, length.out = 20)`; `--lambdas-1` and `--lambdas-2` take comma-separated values or `from:to:by`. On a 10-core M4, 1000 replicates take about 105 min (both outcomes); the total run time is printed at the end and recorded in `run_info.txt`.
-
-Outputs, in `src/outputs/causal_sim/` (or `--out-dir`):
+Outputs, in each `--out-dir`:
 - `summary.csv`: joint coverage, CI width, and estimated against true band width, per outcome, Λ pair and method, rounded.
-- `summary_full.csv`: every summary column (MC s.e., per-end coverage, bias, weights).
-- `estimates.csv` (gitignored), `true_bands.csv` (per study), `single_study_coverage.csv` and `run_info.txt`.
+- `summary_full.csv` (gitignored): every summary column (MC s.e., per-end coverage, bias, weights).
+- `estimates.csv` (gitignored), `true_bands.csv` (per study), `single_study_coverage.csv` and `run_info.txt` (the exact command and git hash).
 
-To replicate DGK's own simulation (about 40 min; their settings: seed 1, 1000 replicates, n = 1000):
-
-```
-Rscript R/dgk_replication.R               # run their scripts unmodified, then compare
-Rscript R/dgk_replication.R --check-only  # compare saved outputs only
-```
-
-It saves their committed results and ours in `src/outputs/dgk_replication/{original,replication}/`, restores their files in the clone, and writes `comparison.csv` (mean bounds and coverage per outcome, method and Λ).
+The earlier designs (scaled noise, rare binary outcome, forest nuisances, DGK's design and its replication) are archived with their commands in `Outdated/`, `quality_reports/plans/done/` and `Outdated/provenance/` in the paper repo.
 
 ### Using Orca
 [Orca](https://www.onorca.dev/) runs several Claude Code sessions side by side, giving each "branch" its own git worktree: a separate checkout of the repo in its own folder, on its own branch.

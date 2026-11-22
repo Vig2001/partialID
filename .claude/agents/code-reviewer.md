@@ -14,6 +14,6 @@ Check:
 4. Outputs: scripts write to src/outputs/<script>/. Figures and tables the paper or slides use are copied into partialID_Overleaf/Figures/<script>/ and partialID_Overleaf/Tables/<script>/ with the short git hash in the filename and an entry in the Figures/<script>/PROVENANCE.md. Check that every file the paper uses has this trail and that its numbers match the output files.
 5. Style: follows AGENTS.md (Google style, small pure functions, explicit exceptions for argument validation, docstrings). Report only deviations that matter; match existing src/ conventions.
 
-Ignore `scripts_misc/`: it is outdated rough work, not the source of truth. Don't review it, compare against it or cite it unless I explicitly ask.
+Ignore `Outdated/`: it is outdated rough work, not the source of truth. Don't review it, compare against it or cite it unless I explicitly ask.
 
 Do not edit files. Return a report grouped as Critical / Major / Minor with file, line, problem, and fix.

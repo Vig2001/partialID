@@ -17,9 +17,9 @@ Point identification (ID) of a causal estimand relies on strong, untestable assu
 
 - `src/`: the main codebase (e.g. `toy_sim.py`).
     - `helpers/`: functions; `plotting/`: plotting functions; `latex/`: scripts that write paper and slide figures and tables
-    - `outputs/`: results written by scripts, one folder per script
+    - `outputs/`: only the runs and outputs the paper uses (`toy_sim_g2`, `causal_sim_quick_{continuous,binary}_unscaled`, `causal_sim_line_figs/non_scaled/merged_plots`)
 - `R/` (helpers in `R/helpers/`): the causal simulations; `tests/`: pytest tests; `checks/`: one-off numerical checks
-- `scripts_misc/`: old rough working. Not the source of truth: don't edit, import from or review it unless I ask
+- `Outdated/` (since 2026-11-22, plan `2026-11-22_refactor-file-trees.md`): `scripts_misc/`, code the paper no longer uses (`src/`, `R/`), and the data of every other run (`outputs/`, figures and tables removed). Run folders named below without a path are there unless listed above. Not the source of truth: don't edit, import from or review it unless I ask
 - `project1venv/`: virtual environment (never edit)
 - `partialID_Overleaf/`: the paper (`compiled.tex`)
 - `partialID_Overleaf/Slides/`: Beamer talks, one folder per talk (`Slides/YYYY-MM_<name>/YYYY-MM_<name>.tex`), using the shared UCL theme (`beamerthemeUCL.sty`) and `\input{../preamble.tex}` unless told otherwise
@@ -33,7 +33,7 @@ settings.json blocks reading `private_data/` (for future data-use agreements); o
 - Python: `source project1venv/bin/activate`; dependencies in `requirements.txt`
 - Run analysis: `python -m src.[script]` from the repo root (`src` is installed editable)
 - Tests: `pytest` from the repo root
-- R: `Rscript R/causal_sim.R [--reps ...]`, `Rscript R/causal_sim_quick.R ...` or `Rscript R/dgk_replication.R` from the repo root. DGK's repo must be cloned in `external/` (see README). `.Rprofile` activates renv; restore packages with `Rscript -e 'renv::restore()'`
+- R: `Rscript R/causal_sim_quick.R ...` (the paper's runs) or `Rscript R/causal_sim.R [--reps ...]` from the repo root. DGK's repo must be cloned in `external/` (see README). `.Rprofile` activates renv; restore packages with `Rscript -e 'renv::restore()'`
 - Bibliography: `partialID_Overleaf/references.bib`
 
 ## Paper conventions
@@ -73,7 +73,7 @@ The code labels methods M1–M14. Use the names in chat and in the paper.
 | M14 | intersection of calibrated CIs | equals M8 |
 
 ### Toy simulation
-`python -m src.toy_sim`, about 1 min 40 s; outputs in `src/outputs/toy_sim/`. Known true band [1, 3]; r in {1, ..., 5}, gaps g in {0, 0.05, 0.1, 0.2, 0.5, 1}, 180 cells.
+`python -m src.toy_sim`, about 1 min 40 s. Known true band [1, 3]; r in {1, ..., 5}, gaps g in {0, 0.05, 0.1, 0.2, 0.5, 1}, 180 cells (findings below; run archived in `Outdated/outputs/toy_sim/`). The paper uses `src/outputs/toy_sim_g2/`, which adds g = 2.
 
 - **Cross-fit** (2026-11-03, plan `done/2026-11-03_toy-cross-fit.md`; K = 2 tried and dropped): M7 is narrower than M3 everywhere, but undercovers at exact ties (min joint coverage 0.925).
 - **Early findings:**
@@ -133,9 +133,9 @@ The code labels methods M1–M14. Use the names in chat and in the paper.
 - **Paper designs:** main text since 2026-11-16 is the non-scaled design (n = 2000/500, same DGP in both studies, SE ratio about 2 at the tie Λ₂ = Λ₁). The scaled designs below are now in the appendix: n = (3000, 500), Λ step 0.05, 1000 reps.
     - Continuous: c = 2.5, Λ₁ in [3, 5], Λ₂ in [1, 3].
     - Binary: study 1's rare outcome k = 15 (prevalence 0.0616), Λ₁ in [1, 4], Λ₂ in [1, 2].
-- **Runs** (in `src/outputs/`):
-    - Main text, parametric nuisances: `causal_sim_quick_continuous`, `causal_sim_quick_binary_k15`.
-    - Appendix, forest nuisances: `causal_sim_forest_binary_k15`, and `causal_sim_noise_n3000_reps1000` (continuous).
+- **Runs:**
+    - The CLeaR paper uses only the non-scaled design: `src/outputs/causal_sim_quick_{continuous,binary}_unscaled`.
+    - Scaled design (findings below), archived in `Outdated/outputs/`: parametric `causal_sim_quick_continuous`, `causal_sim_quick_binary_k15`; forest `causal_sim_forest_binary_k15`, `causal_sim_noise_n3000_reps1000` (continuous).
 - **Findings:**
     - With DGK's design unchanged, the convex split is never narrower than the calibrated intersection (SE ratio ≈ 2 is too small to beat the fold-B cost). DVDS undercovers at Λ = 1 (≈ 0.91). Hence the scaled noise and the rare outcome.
     - Continuous, c = 2.5: the split is narrower than the calibrated intersection in 304/1681 cells (best ratio 0.963). The bands are always nested, and dataset 1 alone is narrower than the split in every such cell.
@@ -156,12 +156,12 @@ The code labels methods M1–M14. Use the names in chat and in the paper.
         - CLR is 18% narrower than the convex split, in every cell.
     - Selection (M12, M13) is valid everywhere, except the CLR intersection with selection in 3 parametric binary, 2 forest binary and 123 continuous forest cells. The 123 have Λ₂ in [1, 1.1]: study 1 is dropped, and study 2's own forest DVDS CI undercovers at n = 500.
 - **Other:**
-    - `R/dgk_replication.R` reruns DGK's simulation unmodified (~40 min); not run yet.
-    - DGK's DGP and closed-form band: `Results/Causal Simulations/causal_sim_explained.tex`.
+    - `Outdated/R/dgk_replication.R` reruns DGK's simulation unmodified (~40 min); not run yet.
+    - DGK's DGP and closed-form band: `Notes/Simulation_Notes/causal_sim_code_explained.tex`.
     - Next, with no plan saved yet: larger n₁ and a finer grid.
     - renv at the repo root (cache disabled, library in `renv/library/`).
     - `R/stata/` (CLR via RStata) not created yet; a draft Python CLR is in `quality_reports/plans/2026-10-30_clr-implementation-draft.md`.
-    - Old ZSB/NIW code is in `scripts_misc/outdated_help/`.
+    - Old ZSB/NIW code is in `Outdated/scripts_misc/outdated_help/`.
 
 ### Comparator sets and selection (2026-11-13)
 Plan: `quality_reports/plans/2026-11-13_comparator-sets.md`. Stage 1 is done. Stage 2, CLR with adaptive inequality selection, is implemented and in the paper.
@@ -180,27 +180,23 @@ Plan: `quality_reports/plans/2026-11-13_comparator-sets.md`. Stage 1 is done. St
 - **Open:** whether to keep the causal Results opening remark about DGK's original design.
 
 ### Where things are in the paper
-- **Toy, main text:**
-    - `tab:toy-width-coverage` (three sets, excess width).
-    - `fig:toy-coverage-by-gap`: coverage (top) and excess width (bottom) in one figure, without the AIS CIs (`Figures/toy_sim/merged_plot/`, from `src.latex.toy_sim_paper_figs`); the AIS comparison is in `app:toy-ais`.
-- **Toy, appendix (`app:sim`):**
-    - Oracle paragraph (`app:toy-oracle`).
-    - `tab:toy-split-intersection`: split band intersection, convex split, oracle convex (`toy_sim_slide_figs --band-oracle`).
-- **Appendix "Estimated Bands" (`app:estimated-bands`):**
-    - Band-ends table `tab:toy-band-width`, with the calibrated column labelled "estimated bands intersected".
-    - Convergence figure `fig_convergence_app.pdf`.
-- **Causal, main text:**
-    - `tab:causal-continuous-param` and `tab:causal-binary-param` (eleven columns, scaled with `\resizebox`).
-    - `fig:causal-excess-by-lambda`: non-scaled design since 2026-11-16 (n = 2000/500, c = 1, k = 1, Λ₁ ∈ {2,…,5}, Λ₂ ∈ [1, 6] step 0.25; runs `causal_sim_quick_{continuous,binary}_unscaled`). Excess width (log y) at Λ₁ = 4, continuous left, binary right, no AIS CIs (`Figures/causal_sim/line_plots/non_scaled/`). The scaled design (c = 2.5, k = 15, n = 3000/500) and its two tables are in `app:causal-scaled`.
-- **Causal, appendix:**
-    - `app:causal-coverage` ("Causal Simulation: Further Results"): coverage at Λ₁ = 4, the three-Λ₁ panel figures (excess and coverage), and the AIS comparison at Λ₁ = 4. `app:toy-ais`: toy AIS comparison.
-    - `app:sim-forest`: the forest excess-width and coverage line plots (the continuous row has no cross-fit), the binary forest table and the continuous forest table.
+Since 2026-11-22 `compiled.tex` is the CLeaR 2027 source (class `clear2027`, `anon`). The previous local paper is in `Outdated/pre_clear_paper/`, which holds the scaled, forest and estimated-bands appendices and the toy tables.
+- **Sections:**
+    - Introduction; Related literature.
+    - Methodology: `notation_setup.tex`, `Intersection Bounds/CLR.tex`, `Convex/convex.tex`, `Intersection Bounds/CLR_Convex.tex`.
+    - Results: `Non-Causal Toy/toy_sim.tex`, `Causal Simulations/causal_sim.tex`.
+    - `Discussion/discussion.tex`.
+    - Appendix: `Theoretical Proofs/proofs.tex` (A, B), `Extended Simulation Details and Results/app_causalsim.tex` (C DGPs, D.1 parametric, D.2 AIS).
+- **Figures** (flat `Figures/{toy_sim,causal_sim}/`; code, runs and commands in `Figures/PROVENANCE.md`):
+    - Fig. 1 `fig_coverage_excess_by_gap_mt` (toy, log gap axis).
+    - Fig. 2 `fig_coverage_excess_lambda4_mt` (causal, Λ₁ = 4).
+    - Fig. 3 `fig_coverage_excess_by_lambda_app` (merged grid since 2026-11-22; the submission input the coverage-only grid, against its own caption).
+    - Fig. 4 `fig_coverage_excess_by_gap_ais_app`.
+    - Fig. 5 `fig_coverage_excess_by_lambda_ais_app`.
+- **Tables:** none input. `Tables/toy_sim/tab_toy_width_mt` (the tabular form of Fig. 1) is kept.
 - **Files:**
-    - Tables: `Tables/{toy_sim,causal_sim}/{total_width,excess_width}/`, with the same names in both; the paper inputs `excess_width`.
-    - Causal line plots: `Figures/causal_sim/line_plots/`. The old box plots, no longer input, are in `Figures/causal_sim/boxplots/{total_width,excess_width}/`.
-    - Commands and history: `Figures/{toy_sim,causal_sim}/PROVENANCE.md`.
     - PDFs are gitignored in the paper repo, so upload them to Overleaf by hand.
-    - Slide versions of the toy figures and tables come from `python -m src.latex.toy_sim_slide_figs`.
+    - The full figure history up to the submission is in `Outdated/provenance/`.
 
 ### Code
 - Code follows AGENTS.md.
@@ -208,7 +204,7 @@ Plan: `quality_reports/plans/2026-11-13_comparator-sets.md`. Stage 1 is done. St
     - MC summaries: `src/helpers/mc_metrics.py`.
     - Plots: `src/plotting/`.
     - Paper and slide outputs: `src/latex/`.
-- `tests/` has 64 tests, all passing. pytest 9.2.0 is installed but not yet in `requirements.txt`.
+- `tests/` has 69 tests, all passing. pytest 9.2.0 is installed but not yet in `requirements.txt`.
 
 ## Skills
 

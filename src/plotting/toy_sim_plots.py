@@ -695,7 +695,7 @@ def plot_bound_convergence(
 
     Args:
         df: One row per (n1, gap, method), as written by
-            src/toy_convergence.py.
+            Outdated/src/toy_convergence.py.
         panels: Panel specifications, in order.
         out_path: Where to save the figure.
     """
@@ -755,7 +755,7 @@ def plot_standardised_bias(
 
     Args:
         df: One row per (n1, gap, method), with columns out_L and out_U
-            (src/toy_convergence.py).
+            (Outdated/src/toy_convergence.py).
         methods: Values of df.method, one column of panels each.
         gaps: Values of df.gap, one line each, in legend order.
         out_path: Where to save the figure.
