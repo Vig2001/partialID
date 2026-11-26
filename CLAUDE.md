@@ -6,7 +6,7 @@ Point identification (ID) of a causal estimand relies on strong, untestable assu
 
 - **Plan first:** for non-trivial tasks, present a plan and wait for my approval. Save approved plans to `quality_reports/plans/YYYY-MM-DD_short-name.md`; once enacted, move them to `quality_reports/plans/done/` and update references to them.
 - **Verify after:** after changing a `.tex` file, compile it and check the log for errors, undefined references and missing citations. After changing code, run it and check the output before saying it is done.
-- **The paper is a separate repo:** `partialID_Overleaf/` syncs with Overleaf. Commit and push paper changes from inside that folder; never add it to the projectone repo. The paper is `partialID_Overleaf/compiled.tex`, which inputs the sections from their folders.
+- **The paper is a separate repo:** `partialID_Overleaf/` syncs with Overleaf. Commit and push paper changes from inside that folder; never add it to the projectone repo. The paper is `partialID_Overleaf/arxiv.tex` (standard `article` preprint), which inputs the sections from their folders. The CLeaR submission source lives only in its own Overleaf project, which the user syncs by hand; never copy refactor changes or non-CLeaR styles into it.
 - **Everything the paper uses lives inside `partialID_Overleaf/`** (figures, tables, `.bib`), or Overleaf can't see it.
 - **Numbers come from code:** never type a result into the paper by hand; it must trace to code in `src/` and the file that code wrote.
 - **Learn from corrections:** when I correct you, add a one-line entry under Corrections.
@@ -21,7 +21,7 @@ Point identification (ID) of a causal estimand relies on strong, untestable assu
 - `R/` (helpers in `R/helpers/`): the causal simulations; `tests/`: pytest tests; `checks/`: one-off numerical checks
 - `Outdated/` (since 2026-11-22, plan `done/2026-11-22_refactor-file-trees.md`): `scripts_misc/`, code the paper no longer uses (`src/`, `R/`), and the data of every other run (`outputs/`, figures and tables removed). Run folders named below without a path are there unless listed above. Not the source of truth: don't edit, import from or review it unless I ask
 - `project1venv/`: virtual environment (never edit)
-- `partialID_Overleaf/`: the paper (`compiled.tex`)
+- `partialID_Overleaf/`: the paper (`arxiv.tex`)
 - `partialID_Overleaf/Slides/`: Beamer talks, one folder per talk (`Slides/YYYY-MM_<name>/YYYY-MM_<name>.tex`), using the shared UCL theme (`beamerthemeUCL.sty`) and `\input{../preamble.tex}` unless told otherwise
 - `quality_reports/`: plans, session logs, reviews
 
@@ -29,7 +29,7 @@ settings.json blocks reading `private_data/` (for future data-use agreements); o
 
 ## Commands
 
-- Compile paper: `cd partialID_Overleaf && latexmk -pdf compiled.tex` (`-xelatex` if Overleaf uses XeLaTeX)
+- Compile paper: `cd partialID_Overleaf && latexmk -pdf arxiv.tex` (`-xelatex` if Overleaf uses XeLaTeX)
 - Python: `source project1venv/bin/activate`; dependencies in `requirements.txt`
 - Run analysis: `python -m src.[script]` from the repo root (`src` is installed editable)
 - Tests: `pytest` from the repo root
@@ -46,7 +46,7 @@ settings.json blocks reading `private_data/` (for future data-use agreements); o
 
 ### Method and framing
 - Convex combination method: stress-testing it and proving theorems. Brieuc's shorter proof of Prop 4.2 (`prop42_proof.pdf`) is under review. In the CLeaR paper that result is `prop:split-lower` (Prop. 1, proved in Appendix A.1), and the A.1 proof uses $F_k$ and Pólya's theorem, as his note does; notes in `quality_reports/reviews/2026-11-02_prop42-proof-notes.md` (open: keep Remark 2 or not).
-- Abstract (CLeaR submission, inline in `compiled.tex`; the 2026-11-06 draft is in `Tex_Outdated/pre_clear_paper/Introduction/abstract.tex`): two independent studies each give a band, and the effect lies in their intersection. CIs for the intersection combine the per-study CIs:
+- Abstract (CLeaR submission, inline in `arxiv.tex`; the 2026-11-06 draft is in `Tex_Outdated/pre_clear_paper/Introduction/abstract.tex`): two independent studies each give a band, and the effect lies in their intersection. CIs for the intersection combine the per-study CIs:
     1. the Šidák-corrected intersection, shown to coincide with CLR (2013);
     2. convex combinations of the two studies' bounds at each end, each a valid bound, with the oracle (narrowest) weight characterised;
     3. estimated weights, valid by sample splitting (band consistent without the weight converging) or by CLR over convex combinations. Overlap (2026-11-16): convex CLR without selection is P&S (2025) Section 5.2 (LCB_mix, Prop. 5) with two independent studies. New here: the version with selection, and the fusion setting;
@@ -182,7 +182,7 @@ Plan: `quality_reports/plans/2026-11-13_comparator-sets.md`. Stage 1 is done. St
 - **Open:** whether to keep the causal Results opening remark about DGK's original design.
 
 ### Where things are in the paper
-Since 2026-11-22 `compiled.tex` is the CLeaR 2027 source (class `clear2027`, `anon`). The previous local paper is in `Tex_Outdated/pre_clear_paper/`, which holds the scaled, forest and estimated-bands appendices and the toy tables.
+The paper is the CLeaR 2027 submission (submitted 2026-11-16, imported from the CLeaR Overleaf zip on 2026-11-22). Since 2026-11-26 the main file is `arxiv.tex` (`article`, amsthm, Latin Modern, no acknowledgements); the CLeaR class files and `compiled.tex` were deleted after the post-submission text fixes were copied to the CLeaR Overleaf by hand. Not yet on arXiv (needs Brieuc's agreement). The previous local paper is in `Tex_Outdated/pre_clear_paper/`, which holds the scaled, forest and estimated-bands appendices and the toy tables.
 - **Sections:**
     - Introduction; Related literature.
     - Methodology: `notation_setup.tex`, `Intersection Bounds/CLR.tex`, `Convex/convex.tex`, `Intersection Bounds/CLR_Convex.tex`.
@@ -236,7 +236,7 @@ Agents (in `.claude/agents/`): code-reviewer, proofreader, methods-reviewer, cit
 - Respect each section's assumptions: in the known-variance Gaussian section, never suggest estimating $\sigma_k^2$.
 - Write derivations in the paper as connected prose between displays, never with bold "Step 1", "Result." headings.
 - When variances are estimated, don't contrast with the known-variance section; say validity relies on the variance estimators being consistent.
-- Table captions above, figure captions below (`compiled.tex` sets `\captionsetup[table]{position=top}`). Keep captions lean: shared conventions (nominal level, replications, coverage and bold, folds, selection, row rule) go in the simulation's setup text; MC s.e. as one "at most" clause from the `...Max` macros.
+- Table captions above, figure captions below (no table is input; if one is, load `caption` in `arxiv.tex` with `\captionsetup[table]{position=top}`). Keep captions lean: shared conventions (nominal level, replications, coverage and bold, folds, selection, row rule) go in the simulation's setup text; MC s.e. as one "at most" clause from the `...Max` macros.
 - Don't rank methods by how often each is narrowest per cell (that uses hindsight). Compare fixed rules by median and worst-case width relative to the per-cell best.
 - Cross-fitting with nuisances means standard cross-fitting: fit on the other folds, predict on the held-out fold. Don't port the toy's fold-alone fits.
 - Related work: the closest papers are Lanners et al. (2025), Chernozhukov, Lee & Rosen (2013) and Yu et al. (2026; JRSS-B vol. 88, published version of arXiv 2412.03731). Also close: Ponomarev & Semenova (2025; arXiv 2410.07443), whose LCB_mix is a convex CLR and who make the margin-condition point (cited at `convex.tex:66`); and Ji, Lei & Spector (2026; arXiv 2310.08115), whose Theorem 3.1 is cited in the split-validity proof (`proofs.tex`). Han & McCloskey (2024) targets a parameter selected from data, so it is not close. Keep econometric references minimal; the contrast is that they don't combine data sources for partial ID.

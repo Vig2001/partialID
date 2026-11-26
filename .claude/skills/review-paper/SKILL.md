@@ -4,7 +4,7 @@ description: Full review of the paper using the proofreader, methods-reviewer, c
 disable-model-invocation: true
 ---
 
-1. Run these agents in parallel, each with fresh context, on partialID_Overleaf/compiled.tex and the files it inputs:
+1. Run these agents in parallel, each with fresh context, on partialID_Overleaf/arxiv.tex and the files it inputs:
    - proofreader
    - methods-reviewer
    - citation-checker

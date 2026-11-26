@@ -4,7 +4,7 @@ description: Compile the LaTeX paper with latexmk and report errors, undefined r
 argument-hint: "[path to .tex, or blank for the paper]"
 ---
 
-1. Target: $ARGUMENTS. If blank, the paper: partialID_Overleaf/compiled.tex. For a slide deck, compile from inside its talk folder.
+1. Target: $ARGUMENTS. If blank, the paper: partialID_Overleaf/arxiv.tex. For a slide deck, compile from inside its talk folder.
 2. cd into the target's folder and run `latexmk -pdf -interaction=nonstopmode -file-line-error <file>.tex` (use -xelatex or -lualatex instead of -pdf if CLAUDE.md or the deck says so).
 3. Read the .log and, if present, the .blg. List, with line numbers:
    - errors
